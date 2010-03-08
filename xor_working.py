@@ -224,7 +224,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
         def eps_derive(t, tau):
             return -(exp(1-t/tau)*t)/tau**2 + (exp(1-t/tau)/tau)
     
-        def y_derive(dy, dt):
+        def dy(dy, dt):
             ## Formula [2] SpikeProp, Bohte.
             ## y[i](t) = epsilon(t-t[i])
             return eps_derive(dt-dy, 7)
@@ -241,18 +241,18 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
             top = ms_(top)
             sum = 0.0
             for i in xrange(connection.W.shape[0]):
-                sum += connection.W[i,j] * y_derive(ms_(t_i_a(i)), ms_(t_j_a(j))) 
+                sum += connection.W[i,j] * dy(ms_(t_i_a(i)), ms_(t_j_a(j))) 
                 
             return top/sum
 
         def gamma_i_(connection, i):
             sum = 0.0
             for j in xrange(connections.hidden_to_output.W.shape[1]):
-                sum += gamma_j(j) * connections.hidden_to_output.W[i,j] * y_derive(ms_(t_i_a(i)), ms_(t_j_a(j))) 
+                sum += gamma_j(j) * connections.hidden_to_output.W[i,j] * dy(ms_(t_j_a(j)), ms_(t_i_a(i))) 
  
             conn_sum = 0.0
             for h in xrange(connection.W.shape[0]):
-                conn_sum += connection.W[h, i] * y_derive(ms_(t_h_a(h)), ms_(t_i_a(i))) 
+                conn_sum += connection.W[h, i] * dy(ms_(t_h_a(h)), ms_(t_i_a(i))) 
 
             return sum/conn_sum
             
