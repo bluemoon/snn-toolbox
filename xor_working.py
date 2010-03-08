@@ -138,6 +138,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     layer = layers(input, hidden, output)
 
     slow_clock = Clock(dt=16*ms) 
+    fast_clock = Clock(dt=1*ms)
 
     def nextspike():
         base = 0*ms
@@ -146,13 +147,13 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
             yield ((x1[r]*ms+base), (x2[r]*ms+base))
             base += 16*ms
     
-    fast_clock = Clock(dt=1*ms)
-    #array = TimedArray(xor_time_table)
+    ## Inputs
     data = SpikeInputs(2, nextspike, clock=fast_clock)
-    #data = PoissonGroup(2, rates=xor, clock=myclock)
+    ## Monitors
     data_mon = SpikeMonitor(data)
     hidden_mon = SpikeMonitor(layer.hidden)
     out_mon  = SpikeMonitor(output)
+    
     net.add(out_mon)
     net.add(data_mon)
     net.add(hidden_mon)
@@ -303,75 +304,12 @@ connections.hidden_to_output.compress()
 connections.hidden_to_output.W[:] = rand(connections.hidden_to_output.W.shape[0], connections.hidden_to_output.W.shape[1])
 connections.input_to_hidden.compress()
 connections.input_to_hidden.W[:] = rand(connections.input_to_hidden.W.shape[0], connections.input_to_hidden.W.shape[1])
-#C3.W[:] = rand(22)
 
 ## i)   Feed-forward computation
 ## ii)  Backpropagation to the output layer
 ## iii) Backpropagation to the hidden layer
 ## iv)  Weight updates
 
-myclock = Clock(dt=1*ms) 
-@network_operation(myclock) 
-def backPropagate(): 
-    def hidden_output(connection, error_delta):
-        ## connection.W = weight matrix
-        deltas = []
-        for i in xrange(connection.W.shape[0]):     ## shape[0] = rows, neuron
-            ## reset error every new neuron "i"
-            weight_change = learn_rate * error_delta * connection.source._S[0,:][i]
-            deltas.append(-weight_change)
-
-        return deltas
-
-    def input_hidden(connection, error_delta):
-        print connection.W
-        deltas = []
-        for i in xrange(connection.W.shape[0]):     ## shape[0] = rows, neuron
-            ## reset error every new neuron "i"
-            for j in xrange(connection.W.shape[1]):
-                hidden_i = connection.target._S[0,:][i]
-                x = hidden_i * hidden_i
-                x = x * learn_rate * connections.hidden_to_output.W[i] * error_delta
-                x = x * connections.data_to_input.source._S[0,:][i]
-                connection.W[i,j] += -x
-
-
-    def update(connection, weight, conn):
-        for i in xrange(connection.W.shape[0]):
-            for j in xrange(connection.W.shape[1]):
-                if isinstance(weight, list):
-                    connection.W[i,j] += learn_rate*weight[i]
-                    conn[i,j] = weight[j]
-                else:
-                    connection.W[i,j] += learn_rate*weight
-                    conn[i,j] = weight
-
-    def error():
-        error_delta = float(xor_history[-1][1]) - float(connections.hidden_to_output.target._S[0,:])
-        output_delta = dsigmoid(connections.hidden_to_output.target._S[0,:]) * error_delta
-        print "xor target:", float(xor_history[-1][1]),
-        print "output value:", connections.hidden_to_output.target._S[0,:],
-    
-        return error_delta
-
-    print "inputs:", connections.input_to_hidden.source._S[0,:]
-    print "data:", connections.data_to_input.source._S[0,:]
-    ## hidden -> output
-    ## input  -> hidden
-    mytime.append(myclock.t / ms)    
-    weight_delta = hidden_output(connections.hidden_to_output, error())
-    update(connections.hidden_to_output, weight_delta, co)
-    input_hidden(connections.input_to_hidden, error())
-    
-    
-#net.add(backPropagate)
-
-
-
-#subplot(221)
-#plot(R.times/ms, R.smooth_rate(2*ms,'gaussian'))
-#raster_plot(hidden_monitor)
-#title('Hidden spikes')
 net.run(run_time, report='text')
 subplot(221)
 plot(rate.times/ms,rate.smooth_rate(5*ms)/Hz)
