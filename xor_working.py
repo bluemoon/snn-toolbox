@@ -22,18 +22,13 @@ neurons     = 50
 learn_rate  = 7
 dt          = 1*ms 
 gmax        = 0.01
-taum        = 10*ms
-tau_pre     = 20*ms
-tau_post    = tau_pre
-tau_trace   = 50*ms 
 run_time    = 1*second
-dA_pre      = .01
-dA_post     = -dA_pre*tau_pre/tau_post*1.05
 re          = 0*mV
 A           = []
 mytime      = []
 errors      = [0]
 xor_history = []
+
 # Pick an electrophysiological behaviour
 tauw, a, b, Vr = 144*ms, 4*nS, 0.0805*nA, -70.6*mV # Regular spiking (as in the paper)
 ##tauw,a,b,Vr=20*ms,4*nS,0.5*nA,VT+5*mV # Bursting
@@ -196,8 +191,12 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
 
     connection = connections(d_to_i, i_to_h, h_to_o)
 
+
+    ## Lots of hacks till the end of bpnn_
     @network_operation(slow_clock)
     def bpnn_():
+        ## Get the differences between spike times, 
+        ## this will give us the target value we need
         t_d     = xor_diff(data_mon.spiketimes[0] - data_mon.spiketimes[1])
         bools   = t_d[0]
         t_j_d   = t_d[1]
@@ -224,11 +223,20 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
 
         def eps_derive(t, tau):
             return -(exp(1-t/tau)*t)/tau**2 + (exp(1-t/tau)/tau)
-
-        def y_derive(dyi, dtj):
-            return eps_derive(dtj-dyi, 7)
+    
+        def y_derive(dy, dt):
+            ## Formula [2] SpikeProp, Bohte.
+            ## y[i](t) = epsilon(t-t[i])
+            return eps_derive(dt-dy, 7)
 
         def gamma_j_(connection, j):
+            ## Formula [12] SpikeProp, Bohte.
+            ## 
+            ##    t[j][desired] - t[j][actual]
+            ##   ---------------------------------------------------
+            ##    sum w[i][j](pd y[i](t[j][actual])/pd t[j][actual])
+            ##  i subset j 
+            
             top = t_j_d[time] - t_j_a(j)
             top = ms_(top)
             sum = 0.0
