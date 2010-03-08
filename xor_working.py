@@ -18,7 +18,6 @@ VT          = -80.4*mV
 DeltaT      = 2*mV
 Vcut        = VT+5*DeltaT
 weight      = 0.7*mV
-rate        = 50*Hz
 neurons     = 50
 learn_rate  = 7
 dt          = 1*ms 
@@ -298,10 +297,10 @@ ci = matrix(connections.input_to_hidden.W)
 def dsigmoid(y):
     return 1.0-y*y
 
-#yT, Y = sympy.symbols('yT Y')
-#E = 0.5 * (Y-yT) **2
+
 connections.hidden_to_output.compress()
 connections.hidden_to_output.W[:] = rand(connections.hidden_to_output.W.shape[0], connections.hidden_to_output.W.shape[1])
+
 connections.input_to_hidden.compress()
 connections.input_to_hidden.W[:] = rand(connections.input_to_hidden.W.shape[0], connections.input_to_hidden.W.shape[1])
 
