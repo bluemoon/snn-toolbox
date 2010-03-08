@@ -194,11 +194,8 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
 
     @network_operation(slow_clock)
     def bpnn_():
-        y = lambda conn, i: conn._S[0,:][i]
-
         t_d = xor_diff(data_mon.spiketimes[0] - data_mon.spiketimes[1])
         bools = t_d[0]
-
         t_j_d   = t_d[1]
 
         time = 0
@@ -206,7 +203,11 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
         t_j_a = lambda i: out_mon.spiketimes[i][time]
         t_i_a = lambda i: hidden_mon.spiketimes[i][time]
         t_h_a = lambda i: data_mon.spiketimes[i][time]
-        ms_ = lambda x: x * 10000
+
+        ## This is a major hack... the reason for this is the data is stored
+        ## with a "unit" ms/mv etc. and when converted to a float it happens
+        ## to be a really tiny decimal and is not useful in the calculations
+        ms_   = lambda x: x * 10000
 
 
         gamma_j = lambda j: gamma_j_(connections.hidden_to_output, j)
@@ -249,7 +250,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
                 sum += 1
             return 0.5*sum**2
 
-        if ms_(float(slow_clock.t)) > (2):
+        if ms_(float(slow_clock.t)) > (32):
             print "Gamma_j:", gamma_j(0)
             #print "dw_ij:", dw_ij(0, 0)
             print "Gamma_i:", gamma_i(2)
@@ -257,19 +258,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
 
         
     net.add(bpnn_)   
-
-    stdp = bpnn(i_to_h, clock=fast_clock)
-    net.add(stdp)
-    stdp = bpnn(h_to_o, clock=fast_clock)
-    net.add(stdp)
-    net.add(data)
-
-
     net.add(neurons)
-    #net.add(input)
-    #net.add(hidden)
-    #net.add(output)
-    
     return neurons, layer, connection
 
 
