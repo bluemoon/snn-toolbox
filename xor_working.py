@@ -126,16 +126,18 @@ class connections:
 
 
 
-net = Network() 
+net = Network()
 def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     neurons = NeuronGroup(input_neurons+hidden_neurons+output_neurons, model=eqs, threshold=Vcut, reset="vm=Vr;w+=b", freeze=True)
-
+    
     input  = neurons[0:input_neurons]
     hidden = neurons[input_neurons:input_neurons+hidden_neurons]
     output = neurons[input_neurons+hidden_neurons:]
     
     layer = layers(input, hidden, output)
-
+    ## setup clocks, one slow dt=16ms and one fast dt=1ms
+    ## the reasons for this are for the time delays in
+    ## the connections. which vary from 0-16ms
     slow_clock = Clock(dt=16*ms) 
     fast_clock = Clock(dt=1*ms)
 
@@ -148,10 +150,12 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     
     ## Inputs
     data = SpikeInputs(2, nextspike, clock=fast_clock)
+    net.add(data)
+
     ## Monitors
-    data_mon = SpikeMonitor(data)
+    data_mon   = SpikeMonitor(data)
     hidden_mon = SpikeMonitor(layer.hidden)
-    out_mon  = SpikeMonitor(output)
+    out_mon    = SpikeMonitor(output)
     
     net.add(out_mon)
     net.add(data_mon)
@@ -194,8 +198,8 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
 
     @network_operation(slow_clock)
     def bpnn_():
-        t_d = xor_diff(data_mon.spiketimes[0] - data_mon.spiketimes[1])
-        bools = t_d[0]
+        t_d     = xor_diff(data_mon.spiketimes[0] - data_mon.spiketimes[1])
+        bools   = t_d[0]
         t_j_d   = t_d[1]
 
         time = 0
@@ -253,7 +257,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
         if ms_(float(slow_clock.t)) > (32):
             print "Gamma_j:", gamma_j(0)
             #print "dw_ij:", dw_ij(0, 0)
-            print "Gamma_i:", gamma_i(2)
+            print "Gamma_i:", gamma_i(0)
             time += 1
 
         
