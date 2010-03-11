@@ -31,6 +31,11 @@ mytime      = []
 errors      = [0]
 xor_history = []
 
+tau_pre     = 7*ms
+tau_post    = tau_pre
+dA_pre      = .01
+dA_post     = -dA_pre*tau_pre/tau_post*2.5
+
 # Pick an electrophysiological behaviour
 tauw, a, b, Vr = 144*ms, 4*nS, 0.0805*nA, -70.6*mV # Regular spiking (as in the paper)
 ##tauw,a,b,Vr=20*ms,4*nS,0.5*nA,VT+5*mV # Bursting
@@ -46,16 +51,7 @@ x1 = [off, off, on, on]
 x2 = [off, on, off, on]
 
 xor_time_table = []
-def xor_(length):
-    base = 0
-    for time in xrange(length):
-        r = randrange(0, len(x1))
-        out = [x1[r]*Hz, x2[r]*Hz]
-        xor_history.append({'x1':x1[r], 'x2':x2[r], 'time' : time, 'result' : x1[r] ^ x2[r],})
-        xor_time_table.append([(base+x1[r])*ms, (base+x2[r])*ms])
-        base+=16
 
-xor_(100)
 
 class SpikeInputs(NeuronGroup):
     def __init__(self, neurons, spiketimes, clock=None, period=None):
@@ -101,6 +97,26 @@ class SpikeThresh(Threshold):
 
         return where(firing)[0]
 
+class STDPUpdater(SpikeMonitor):
+    def __init__(self,source,C,vars,code,namespace,delay=0*ms):
+        super(STDPUpdater,self).__init__(source, record=False, delay=delay)
+        self._code=code # update code
+        self._namespace=namespace # code namespace
+        self.C=C
+        
+    def propagate(self,spikes):
+        if len(spikes):
+            self._namespace['spikes']=spikes
+            self._namespace['w']=self.C.W
+            exec self._code in self._namespace
+
+class bpnn(NetworkOperation):
+    def __init__(self, C, clock=clock):
+        NetworkOperation.__init__(self, lambda:None, clock=clock)
+        stdp = ExponentialSTDP(C, tau_pre, tau_post, dA_pre, dA_post, wmax=gmax, update='mixed', clock=fast_clock)
+        pre_mon = SpikeMonitor(stdp.pre_group)
+        
+        
 class layers:
     input  = None
     hidden = None
@@ -111,8 +127,6 @@ class layers:
         self.hidden = hidden
         self.output = output
 
-class connector:
-    pass
 
 class connections:
     data_to_input    = None
@@ -130,7 +144,9 @@ class connections:
 
 net = Network()
 def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
-    neurons = NeuronGroup(input_neurons+hidden_neurons+output_neurons, model=eqs, threshold=Vcut, reset="vm=Vr;w+=b", freeze=True)
+    slow_clock = Clock(dt=16*ms) 
+    fast_clock = Clock(dt=1*ms)
+    neurons = NeuronGroup(input_neurons+hidden_neurons+output_neurons, model=eqs, threshold=Vcut, reset="vm=Vr;w+=b", freeze=True, clock=fast_clock)
     
     input  = neurons[0:input_neurons]
     hidden = neurons[input_neurons:input_neurons+hidden_neurons]
@@ -140,8 +156,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     ## setup clocks, one slow dt=16ms and one fast dt=1ms
     ## the reasons for this are for the time delays in
     ## the connections. which vary from 0-16ms
-    slow_clock = Clock(dt=16*ms) 
-    fast_clock = Clock(dt=1*ms)
+
 
     def nextspike():
         base = 0*ms
@@ -183,7 +198,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
         return bools, target, t
                 
      
-
+    
     d_to_i = Connection(data, layer.input)
     d_to_i.connect_one_to_one(data, layer.input)
     ## input to hidden
@@ -194,9 +209,18 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     W=rand(len(layer.hidden),len(layer.output))*mV
     h_to_o = Connection(layer.hidden, layer.output, structure='dense')
     h_to_o.connect(layer.hidden, layer.output, W)
+
+    stdp = ExponentialSTDP(h_to_o, tau_pre, tau_post, dA_pre, dA_post, wmax=gmax, update='mixed', clock=fast_clock)
+    #pre_mon  = SpikeMonitor(stdp.pre_group)
+    #post_mon = SpikeMonitor(stdp.post_group)
+
+
     net.add(i_to_h)
     net.add(h_to_o)
     net.add(d_to_i)
+    net.add(stdp)
+    #net.add(pre_mon)
+    #net.add(post_mon)
 
     connection = connections(d_to_i, i_to_h, h_to_o)
 
@@ -204,10 +228,17 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     ## Lots of hacks till the end of bpnn_
     @network_operation(slow_clock)
     def bpnn_():
+        #print pre_mon.spiketimes, post_mon.spiketimes
+
+        ## Constants
+        tau_ = 7
+        n_ = 0.05
+
         ## This is a major hack... the reason for this is the data is stored
         ## with a "unit" ms/mv etc. and when converted to a float it happens
         ## to be a really tiny decimal and is not useful in the calculations
-        ms_   = lambda x: x*1000
+        ms_   = lambda x: x*10000
+
 
         ## Get the differences between spike times, 
         ## this will give us the target value we need
@@ -216,23 +247,19 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
         t_j_d   = t_d[1]
         d_k     = t_d[2]
 
-        time    =  int(floor(ms_(float(slow_clock.t))/16))
-        print "time:",time
+        ## Current time conversion
+        time    =  int(floor((float(slow_clock.t)*1000)/16))
+        print "time:", time
+
         t_j_a = lambda i: out_mon.spiketimes[i][time]
         t_i_a = lambda i: hidden_mon.spiketimes[i][time]
         t_h_a = lambda i: data_mon.spiketimes[i][time]
 
-
-        tau_ = 7
-        n_ = 0.05
+        
         gamma_j = lambda j: gamma_j_(connections.hidden_to_output, j)
         gamma_i = lambda j: gamma_i_(connections.input_to_hidden,  j)
-        dw_ij = lambda i,j: -(n_*(epsilon(ms_(t_j_a(j))-ms_(t_i_a(i))) * gamma_j(j)))
+        dw_ij   = lambda i,j: -(n_*(epsilon(ms_(t_j_a(j))-ms_(t_i_a(i))) * gamma_j(j)))
         
-        def error_gradient(connection, d_out, input):
-            gradw = zeros((prod(connection.w.shape), input), dtype=float)
-            gradw += outer(d_output, input).flatten()
-            print gradw
 
         def epsilon(t):
             return (t/tau_)*exp(1-(t/tau_))
@@ -282,7 +309,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
                 sum += ms_(t_j_a(x)) - ms_(t_j_d[time])
             return 0.5*(sum**2)
 
-        if ms_(float(slow_clock.t)) > 0:
+        if ms_(float(slow_clock.t)) > 32 and len(t_j_d) > time:
             for j in xrange(connections.hidden_to_output.W.shape[1]):
                 print "Gamma_j:", gamma_j(j), "node:", j
                 
@@ -294,8 +321,11 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
 
             print "Error:", error_()
             #print "Gamma_i:", gamma_i(0)
+            #print stdp.Ap
+            print ms_(stdp.A_pre), ms_(stdp.A_post)#, ms_(stdp.tau_pre), ms_(stdp.tau_post)
+            print ms_(t_j_d[time] - t_j_a(0))
             time += 1
-
+            
         
     net.add(bpnn_)   
     net.add(neurons)
