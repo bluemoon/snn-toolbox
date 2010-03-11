@@ -190,12 +190,10 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     W = rand(len(layer.input),len(layer.hidden))*mV
     i_to_h = Connection(layer.input,  layer.hidden, structure='dense')
     i_to_h.connect(layer.input, layer.hidden, W)
-    #i_to_h.connect_full(layer.input, layer.hidden, 3.25*mV)
     ## hidden to output
     W=rand(len(layer.hidden),len(layer.output))*mV
     h_to_o = Connection(layer.hidden, layer.output, structure='dense')
     h_to_o.connect(layer.hidden, layer.output, W)
-    #h_to_o.connect_full(layer.hidden, layer.output, 3.25*mV)
     net.add(i_to_h)
     net.add(h_to_o)
     net.add(d_to_i)
@@ -292,7 +290,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
                 for i in xrange(connections.hidden_to_output.W.shape[0]):
                     print "delta w(%d,%d):" % (i,j), dw_ij(i, j)
                     #print optimize.fmin(dw,[0],args=(connection.hidden_to_output,i,j))
-                    print ms_(t_j_a(j))-ms_(t_i_a(i))
+                    print ms_(t_j_a(j)),ms_(t_i_a(i))
 
             print "Error:", error_()
             #print "Gamma_i:", gamma_i(0)
