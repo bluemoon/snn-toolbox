@@ -52,6 +52,33 @@ x2 = [off, on, off, on]
 
 xor_time_table = []
 
+def nextspike():
+    base = 0*ms
+    while True:
+        r = randrange(0, len(x1))
+        yield ((x1[r]*ms+base), (x2[r]*ms+base))
+        base += 16*ms
+
+def xor_diff(x):
+    bools  = []
+    target = []
+    t      = []
+    for idx, y in enumerate(x):
+        base = idx*float(slow_clock.dt)
+        t.append(base)
+
+        if y > 0:
+            bools.append(True)
+            target.append(base+0.0010)
+        if y < 0:
+            bools.append(True)
+            target.append(base+0.0010)
+        if y == 0:
+            bools.append(False)
+            target.append(base+0.0016)
+
+    return bools, target, t
+
 
 class SpikeInputs(NeuronGroup):
     def __init__(self, neurons, spiketimes, clock=None, period=None):
@@ -111,21 +138,138 @@ class STDPUpdater(SpikeMonitor):
             exec self._code in self._namespace
 
 class bpnn(NetworkOperation):
-    def __init__(self, C, clock=clock):
+    def __init__(self, C, layer, clock=clock):
         NetworkOperation.__init__(self, lambda:None, clock=clock)
-        stdp = ExponentialSTDP(C, tau_pre, tau_post, dA_pre, dA_post, wmax=gmax, update='mixed', clock=fast_clock)
-        pre_mon = SpikeMonitor(stdp.pre_group)
+        #stdp = ExponentialSTDP(C, tau_pre, tau_post, dA_pre, dA_post, wmax=gmax, update='mixed', clock=fast_clock)
+        #pre_mon = SpikeMonitor(stdp.pre_group)
+        eq = """ 
+        dA_pre/dt  = -A_pre/tau_pre   : 1
+        """
+
+        self.C = C
+        self.pre  = NeuronGroup(len(C.source), model=eq, clock=self.clock)
+        self.post = NeuronGroup(len(C.target), model=eq, clock=self.clock)
         
+        self.layer = layer
+        ## Monitors
+        self.d_mon   = SpikeMonitor(layer.data)
+        self.h_mon   = SpikeMonitor(layer.hidden)
+        self.o_mon   = SpikeMonitor(layer.output)
+        
+        self.i_mon   = SpikeMonitor(C.source)
+        self.j_mon   = SpikeMonitor(C.target)
+        
+    def from_ms(self, num):
+        return num*10000
+    
+    def __call__(self):
+        ## Constants
+        tau_ = 7
+        n_ = 0.05
+
+        ## This is a major hack... the reason for this is the data is stored
+        ## with a "unit" ms/mv etc. and when converted to a float it happens
+        ## to be a really tiny decimal and is not useful in the calculations
+        ms_   = lambda x: x*10000
+
+
+        ## Get the differences between spike times, 
+        ## this will give us the target value we need
+        t_d     = xor_diff(self.d_mon.spiketimes[0] - self.d_mon.spiketimes[1])
+        bools   = t_d[0]
+        t_j_d   = t_d[1]
+        d_k     = t_d[2]
+
+        ## Current time conversion
+        time    =  int(floor((float(self.clock.t)*1000)/16))
+        print "time:", time
+
+        t_j_a = lambda i: out_mon.spiketimes[i][time]
+        t_i_a = lambda i: hidden_mon.spiketimes[i][time]
+        t_h_a = lambda i: data_mon.spiketimes[i][time]
+
+        
+        gamma_j = lambda j: gamma_j_(connections.hidden_to_output, j)
+        gamma_i = lambda j: gamma_i_(connections.input_to_hidden,  j)
+        dw_ij   = lambda i,j: -(n_*(epsilon(ms_(t_j_a(j))-ms_(t_i_a(i))) * gamma_j(j)))
+        
+
+        def epsilon(t):
+            return (t/tau_)*exp(1-(t/tau_))
+
+        def depsilon(t):
+            return -(exp(1-t/tau_)*t)/tau_**2 + (exp(1-t/tau_)/tau_)
+    
+        def dy(dy, dt):
+            ## Formula [2] SpikeProp, Bohte.
+            ## y.i(t) = epsilon(t-t.i)
+            return depsilon(ms_(dt)-ms_(dy))
+
+        def gamma_j_(c, j):
+            ## Formula [12] SpikeProp, Bohte.
+            ## 
+            ##    t[j][desired] - t[j][actual]
+            ##   ---------------------------------------------------
+            ##    sum w.ij(pd y.i(t[j][actual])/pd t[j][actual])
+            ##  i subset j 
+            sum = 0.0  
+            ## desired - actual
+            top = t_j_d[time] - t_j_a(j)
+            ## convert to a usable unit
+            top = ms_(top)
+            ## from the last layer to this one
+            for i in xrange(c.W.shape[0]):
+                ## sum all the connection weights 
+                ## times the derivative of epsilon
+                sum += c.W[i,j] * dy(t_i_a(i), t_j_a(j)) 
+                
+            return top/sum
+
+        def gamma_i_(connection, i):
+            sum = 0.0
+            for j in xrange(connections.hidden_to_output.W.shape[1]):
+                sum += gamma_j(j) * connections.hidden_to_output.W[i,j] * depsilon(ms_(t_i_a(i))) 
+                
+            conn_sum = 0.0
+            for h in xrange(connection.W.shape[0]):
+                conn_sum += connection.W[h, i] * depsilon(ms_(t_i_a(i))) 
+
+            return sum/conn_sum
+        
+        def error_():
+            sum = 0.0
+            for x in xrange(1):
+                sum += ms_(t_j_a(x)) - ms_(t_j_d[time])
+            return 0.5*(sum**2)
+
+        if ms_(float(slow_clock.t)) > 32 and len(t_j_d) > time:
+            for j in xrange(connections.hidden_to_output.W.shape[1]):
+                print "Gamma_j:", gamma_j(j), "node:", j
+                
+            for j in xrange(connections.hidden_to_output.W.shape[1]):
+                for i in xrange(connections.hidden_to_output.W.shape[0]):
+                    print "delta w(%d,%d):" % (i,j), dw_ij(i, j)
+                    #print optimize.fmin(dw,[0],args=(connection.hidden_to_output,i,j))
+                    print ms_(t_j_a(j)),ms_(t_i_a(i))
+
+            print "Error:", error_()
+            #print "Gamma_i:", gamma_i(0)
+            #print stdp.Ap
+            print ms_(stdp.A_pre), ms_(stdp.A_post)#, ms_(stdp.tau_pre), ms_(stdp.tau_post)
+            print ms_(t_j_d[time] - t_j_a(0))
+            time += 1
         
 class layers:
     input  = None
     hidden = None
     output = None
+    data   = None
     
-    def __init__(self, input, hidden, output):
+    def __init__(self, data, input, hidden, output):
         self.input  = input
         self.hidden = hidden
         self.output = output
+        self.data   = data
 
 
 class connections:
@@ -151,53 +295,22 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     input  = neurons[0:input_neurons]
     hidden = neurons[input_neurons:input_neurons+hidden_neurons]
     output = neurons[input_neurons+hidden_neurons:]
-    
-    layer = layers(input, hidden, output)
+    ## Inputs
+    data = SpikeInputs(2, nextspike, clock=fast_clock)
+    net.add(data)
+    layer = layers(data, input, hidden, output)
     ## setup clocks, one slow dt=16ms and one fast dt=1ms
     ## the reasons for this are for the time delays in
     ## the connections. which vary from 0-16ms
 
 
-    def nextspike():
-        base = 0*ms
-        while True:
-            r = randrange(0, len(x1))
-            yield ((x1[r]*ms+base), (x2[r]*ms+base))
-            base += 16*ms
     
-    ## Inputs
-    data = SpikeInputs(2, nextspike, clock=fast_clock)
-    net.add(data)
 
-    ## Monitors
-    data_mon   = SpikeMonitor(data)
-    hidden_mon = SpikeMonitor(layer.hidden)
-    out_mon    = SpikeMonitor(output)
     
-    net.add(out_mon)
-    net.add(data_mon)
-    net.add(hidden_mon)
 
-    def xor_diff(x):
-        bools  = []
-        target = []
-        t      = []
-        for idx, y in enumerate(x):
-            base = idx*float(slow_clock.dt)
-            t.append(base)
 
-            if y > 0:
-                bools.append(True)
-                target.append(base+0.0010)
-            if y < 0:
-                bools.append(True)
-                target.append(base+0.0010)
-            if y == 0:
-                bools.append(False)
-                target.append(base+0.0016)
-        return bools, target, t
-                
-     
+    
+
     
     d_to_i = Connection(data, layer.input)
     d_to_i.connect_one_to_one(data, layer.input)
@@ -209,8 +322,9 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     W=rand(len(layer.hidden),len(layer.output))*mV
     h_to_o = Connection(layer.hidden, layer.output, structure='dense')
     h_to_o.connect(layer.hidden, layer.output, W)
-
-    stdp = ExponentialSTDP(h_to_o, tau_pre, tau_post, dA_pre, dA_post, wmax=gmax, update='mixed', clock=fast_clock)
+    b = bpnn(h_to_o, layer, clock=slow_clock)
+    net.add(b)
+    #stdp = ExponentialSTDP(h_to_o, tau_pre, tau_post, dA_pre, dA_post, wmax=gmax, update='mixed', clock=fast_clock)
     #pre_mon  = SpikeMonitor(stdp.pre_group)
     #post_mon = SpikeMonitor(stdp.post_group)
 
@@ -218,7 +332,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     net.add(i_to_h)
     net.add(h_to_o)
     net.add(d_to_i)
-    net.add(stdp)
+    #net.add(stdp)
     #net.add(pre_mon)
     #net.add(post_mon)
 
@@ -327,7 +441,7 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
             time += 1
             
         
-    net.add(bpnn_)   
+    #net.add(bpnn_)   
     net.add(neurons)
     return neurons, layer, connection
 
