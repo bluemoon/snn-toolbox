@@ -12,42 +12,10 @@ import sympy
 ########### Parameters
 on          = 0
 off         = 6
-C           = 281*pF
-gL          = 30*nS
-taum        = C/gL
-EL          = -70.6*mV
-VT          = -80.4*mV
-DeltaT      = 2*mV
-Vcut        = VT+5*DeltaT
-weight      = 0.7*mV
-neurons     = 50
-learn_rate  = 7
-dt          = 1*ms 
-gmax        = 0.01
-run_time    = 200*ms
-re          = 0*mV
-A           = []
-mytime      = []
-errors      = [0]
-xor_history = []
-
-tau_pre     = 7*ms
-tau_post    = tau_pre
-dA_pre      = .01
-dA_post     = -dA_pre*tau_pre/tau_post*2.5
-
-# Pick an electrophysiological behaviour
-tauw, a, b, Vr = 144*ms, 4*nS, 0.0805*nA, -70.6*mV # Regular spiking (as in the paper)
-##tauw,a,b,Vr=20*ms,4*nS,0.5*nA,VT+5*mV # Bursting
-##tauw,a,b,Vr=144*ms,2*C/(144*ms),0*nA,-70.6*mV # Fast spiking
-
-eqs = """
-dvm/dt=(gL*(EL-vm)+gL*DeltaT*exp((vm-VT)/DeltaT)+I-w)/C : volt
-dw/dt=(a*(vm-EL)-w)/tauw : amp
-I : amp
-"""
+run_time    = 800*ms
+tau         = 7*ms
 eqs_n = """
-#du/dt=-u/tau_pre : 1
+#du/dt=-u/tau : 1
 dv/dt = (-w-v)/(10*ms) : volt # the membrane equation
 dw/dt = -w/(30*ms) : volt # the adaptation current
 
@@ -57,11 +25,8 @@ dw/dt = -w/(30*ms) : volt # the adaptation current
 x1 = [off, off, on, on]
 x2 = [off, on, off, on]
 
-artificial_wmax = 1e10*mV/ms
-
-xor_time_table = []
-
 def nextspike():
+    ## this is the generator for the input data
     base = 0*ms
     while True:
         r = randrange(0, len(x1))
@@ -69,6 +34,7 @@ def nextspike():
         base += 16*ms
 
 def xor_diff(x):
+    ## this is the comparator for the input data
     bools  = []
     target = []
     t      = []
@@ -78,13 +44,13 @@ def xor_diff(x):
 
         if y > 0:
             bools.append(True)
-            target.append(base+0.0010)
+            target.append(base+float(10*ms))
         if y < 0:
             bools.append(True)
-            target.append(base+0.0010)
+            target.append(base+float(10*ms))
         if y == 0:
             bools.append(False)
-            target.append(base+0.0016)
+            target.append(base+float(16*ms))
 
     return bools, target, t
 
@@ -119,7 +85,6 @@ class SpikeThresh(Threshold):
     def __call__(self, P):
         firing = zeros(self.neurons)
         t = P.clock.t
-        # it is the iterator for neuron i, and nextspiketime is the stored time of the next spike
         for idx, spike in enumerate(self.nextspiketime):
             if spike is not None and float(spike) <= float(t):
                 if idx not in self.fired:
@@ -133,30 +98,13 @@ class SpikeThresh(Threshold):
 
         return where(firing)[0]
 
-class STDPUpdater(SpikeMonitor):
-    def __init__(self,source,C,vars,code,namespace,delay=0*ms):
-        super(STDPUpdater,self).__init__(source, record=False, delay=delay)
-        self._code=code # update code
-        self._namespace=namespace # code namespace
-        self.C=C
-        
-    def propagate(self,spikes):
-        if len(spikes):
-            self._namespace['spikes']=spikes
-            self._namespace['w']=self.C.W
-            exec self._code in self._namespace
 
 class bpnn(NetworkOperation):
     def __init__(self, connection, layer, clock=clock):
         NetworkOperation.__init__(self, lambda:None, clock=clock)
-        eq = """ 
-        dA_pre/dt  = -A_pre/tau_pre   : 1
-        """
         self.connection = connection
         self.C = connection[-1]
-        #self.pre  = NeuronGroup(len(C.source), model=eq, clock=self.clock)
-        #self.post = NeuronGroup(len(C.target), model=eq, clock=self.clock)
-        
+
         self.layer = layer
         ## Monitors
         self.d_mon   = SpikeMonitor(layer.data)
@@ -201,6 +149,7 @@ class bpnn(NetworkOperation):
         return (t/self.tau)*exp(1-(t/self.tau))
 
     def _depsilon(self, t):
+        ## The derivative of _epsilon
         return -(exp(1-t/self.tau)*t)/self.tau**2 + (exp(1-t/self.tau)/self.tau)
 
     def _dy(self, dy, dt, delay):
@@ -232,9 +181,9 @@ class bpnn(NetworkOperation):
 
     def _gamma_i(self, i):
         sum = 0.0
-
+        
+        ## Set self.C to the last layer
         self.C = self.connection[-1]
-
         for j in xrange(len(self.j_mon.spiketimes)):
             sum += self._gamma_j(j) * self.connection[-1].W[i,j] * self._dy(self.post_a(j), self.pre_a(i), self.delay(i,j)) 
 
@@ -242,14 +191,14 @@ class bpnn(NetworkOperation):
 
         conn_sum = 0.0
         for h in xrange(len(self.h_mon.spiketimes)):
-            conn_sum += self.C.W[h, i] * self._dy(self.h(h), self.pre_a(i), self.delay(h,i)) 
+            conn_sum += self.C.W[h, i] * self._dy(self.pre_a(i), self.h(h), self.delay(h,i)) 
 
         return sum/conn_sum
 
     def _error_(self):
         sum = 0.0
         for j in xrange(self.C.W.shape[1]):
-            sum += (self.post_a(j) - self.post_d(j))*1000
+            sum += self.from_ms(self.post_a(j) - self.post_d(j))
         return 0.5*(sum**2)
 
     def _set_time(self):
@@ -270,24 +219,25 @@ class bpnn(NetworkOperation):
                     dw = -self.learn_rate*self._gamma_j(j) * \
                         self._y(self.post_a(j), self.pre_a(i), self.delay(i,j))
 
-                    self.C.W[i,j] += float(self.to_ms(dw))
-                    print "dw i,j:", dw
+                    self.C.W[i,j] += float(dw*mV)
+                    #print "dw i,j:", dw
 
             ## run the backprop through the i->h layer
             self.C = self.connection[-2]
             for h in xrange(self.C.W.shape[0]):
                 for i in xrange(self.C.W.shape[1]):
-                    print "gamma i:", self._gamma_i(i)
+                    #print "gamma i:", self._gamma_i(i)
                     dw = -self.learn_rate*self._gamma_i(i) * \
                         self._y(self.h(h), self.pre_a(i), self.delay(h,i))
 
-                    self.C.W[h,i] += float(self.to_ms(dw))
+                    self.C.W[h,i] += float(dw*mV)
         
             self.C = self.connection[-1]
 
         
         
 class layers:
+    ## container class
     input  = None
     hidden = None
     output = None
@@ -301,6 +251,7 @@ class layers:
 
 
 class connections:
+    ## container class
     data_to_input    = None
     input_to_hidden  = None
     hidden_to_output = None
@@ -353,13 +304,6 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     net.add(i_to_h)
     net.add(h_to_o)
     net.add(d_to_i)
-    #net.add(stdp)
-    #net.add(pre_mon)
-    #net.add(post_mon)
-
-
-
-
     net.add(neurons)
     return neurons, layer, connection
 
@@ -382,11 +326,6 @@ def backPropagate_addMonitors(neurons, layer, connections):
 neurons, layer, connections = backPropagate_setup(2, 5, 1)
 input_monitor, hidden_monitor, output_monitor, rate, output_rate = backPropagate_addMonitors(neurons, layer, connection)
 
-co = matrix(connections.hidden_to_output.W)
-ci = matrix(connections.input_to_hidden.W)
-
-def dsigmoid(y):
-    return 1.0-y*y
 
 
 connections.hidden_to_output.compress()
@@ -416,9 +355,6 @@ title('Input spikes')
 subplot(224)
 plot(output_rate.times/ms,output_rate.smooth_rate(5*ms)/Hz)
 title('Output Rate')
-
-
-#print correlogram(output_monitor, input_monitor, width=20*ms, bin=1*ms)
 
 show()
 
