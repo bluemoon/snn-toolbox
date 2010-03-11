@@ -24,7 +24,7 @@ neurons     = 50
 learn_rate  = 7
 dt          = 1*ms 
 gmax        = 0.01
-run_time    = 1*second
+run_time    = 200*ms
 re          = 0*mV
 A           = []
 mytime      = []
@@ -46,6 +46,13 @@ dvm/dt=(gL*(EL-vm)+gL*DeltaT*exp((vm-VT)/DeltaT)+I-w)/C : volt
 dw/dt=(a*(vm-EL)-w)/tauw : amp
 I : amp
 """
+eqs_n = """
+#du/dt=-u/tau_pre : 1
+dv/dt = (-w-v)/(10*ms) : volt # the membrane equation
+dw/dt = -w/(30*ms) : volt # the adaptation current
+
+"""
+
 
 x1 = [off, off, on, on]
 x2 = [off, on, off, on]
@@ -142,8 +149,6 @@ class STDPUpdater(SpikeMonitor):
 class bpnn(NetworkOperation):
     def __init__(self, connection, layer, clock=clock):
         NetworkOperation.__init__(self, lambda:None, clock=clock)
-        #stdp = ExponentialSTDP(C, tau_pre, tau_post, dA_pre, dA_post, wmax=gmax, update='mixed', clock=fast_clock)
-        #pre_mon = SpikeMonitor(stdp.pre_group)
         eq = """ 
         dA_pre/dt  = -A_pre/tau_pre   : 1
         """
@@ -192,19 +197,19 @@ class bpnn(NetworkOperation):
         return float(num)*10000
 
     def _epsilon(self, t):
+        ## Formula [3] SpikeProp, Bohte. Et al.
         return (t/self.tau)*exp(1-(t/self.tau))
 
     def _depsilon(self, t):
         return -(exp(1-t/self.tau)*t)/self.tau**2 + (exp(1-t/self.tau)/self.tau)
 
     def _dy(self, dy, dt, delay):
-        ## Formula [2] SpikeProp, Bohte.
-        ## y.i(t) = epsilon(t-t.i)
         return self._depsilon(self.from_ms(dt-dy-delay))
 
     def _y(self, t, ti, delay):
+        ## Formula [2] SpikeProp, Bohte.
+        ## y.i(t) = epsilon(t-t.i)
         diff = self.from_ms(t-ti-delay)
-        print diff
         return self._epsilon(diff)
 
     def _gamma_j(self, j):
@@ -222,7 +227,7 @@ class bpnn(NetworkOperation):
             ## sum all the connection weights 
             ## times the derivative of epsilon
             sum += self.C.W[i,j] * self._dy(self.pre_a(i), self.post_a(j), self.delay(i,j)) 
-                
+            
         return top/sum
 
     def _gamma_i(self, i):
@@ -244,11 +249,11 @@ class bpnn(NetworkOperation):
     def _error_(self):
         sum = 0.0
         for j in xrange(self.C.W.shape[1]):
-            sum += self.from_ms(self.post_a(j) - self.post_d(j))
+            sum += (self.post_a(j) - self.post_d(j))*1000
         return 0.5*(sum**2)
 
     def _set_time(self):
-        self.time =  int(floor((float(self.clock.t)*1000)/(float(self.clock.dt)*1000)))-2
+        self.time =  int(floor((float(self.clock.t)*1000)/16.0))-2
 
     def __call__(self):
         ## Get the differences between spike times, 
@@ -259,6 +264,7 @@ class bpnn(NetworkOperation):
 
         if self.time > 1:
             print "MSE rate:", self._error_()
+            ## frome the h->o layer
             for i in xrange(self.C.W.shape[0]):
                 for j in xrange(self.C.W.shape[1]):
                     dw = -self.learn_rate*self._gamma_j(j) * \
@@ -269,40 +275,17 @@ class bpnn(NetworkOperation):
 
             ## run the backprop through the i->h layer
             self.C = self.connection[-2]
-            for i in xrange(self.C.W.shape[0]):
-                for j in xrange(self.C.W.shape[1]):
+            for h in xrange(self.C.W.shape[0]):
+                for i in xrange(self.C.W.shape[1]):
                     print "gamma i:", self._gamma_i(i)
+                    dw = -self.learn_rate*self._gamma_i(i) * \
+                        self._y(self.h(h), self.pre_a(i), self.delay(h,i))
+
+                    self.C.W[h,i] += float(self.to_ms(dw))
         
             self.C = self.connection[-1]
 
-        def gamma_i_(connection, i):
-            sum = 0.0
-            for j in xrange(connections.hidden_to_output.W.shape[1]):
-                sum += gamma_j(j) * connections.hidden_to_output.W[i,j] * depsilon(ms_(t_i_a(i))) 
-                
-            conn_sum = 0.0
-            for h in xrange(connection.W.shape[0]):
-                conn_sum += connection.W[h, i] * depsilon(ms_(t_i_a(i))) 
-
-            return sum/conn_sum
         
-
-        """if self.from_ms(self.clock.t) > 32 and len(target) > self.time:
-            for j in xrange(connections.hidden_to_output.W.shape[1]):
-                print "Gamma_j:", gamma_j(j), "node:", j
-                
-            for j in xrange(connections.hidden_to_output.W.shape[1]):
-                for i in xrange(connections.hidden_to_output.W.shape[0]):
-                    print "delta w(%d,%d):" % (i,j), dw_ij(i, j)
-                    #print optimize.fmin(dw,[0],args=(connection.hidden_to_output,i,j))
-                    print ms_(t_j_a(j)),ms_(t_i_a(i))
-
-            print "Error:", error_()
-            #print "Gamma_i:", gamma_i(0)
-            #print stdp.Ap
-            print ms_(stdp.A_pre), ms_(stdp.A_post)#, ms_(stdp.tau_pre), ms_(stdp.tau_post)
-            print ms_(t_j_d[time] - t_j_a(0))
-            #time += 1"""
         
 class layers:
     input  = None
@@ -335,7 +318,10 @@ net = Network()
 def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     slow_clock = Clock(dt=16*ms) 
     fast_clock = Clock(dt=1*ms)
-    neurons = NeuronGroup(input_neurons+hidden_neurons+output_neurons, model=eqs, threshold=Vcut, reset="vm=Vr;w+=b", freeze=True, clock=fast_clock)
+    #neurons = NeuronGroup(input_neurons+hidden_neurons+output_neurons, model=eqs_n, threshold=Vcut, reset="vm=Vr;w+=b", freeze=True, clock=fast_clock)
+    neurons = NeuronGroup(input_neurons+hidden_neurons+output_neurons,
+    model=eqs_n, threshold=20*mV, reset='''v  = 0*mV;w += 3*mV ''', 
+    refractory=5*msecond, freeze=True, clock=fast_clock)
     
     input  = neurons[0:input_neurons]
     hidden = neurons[input_neurons:input_neurons+hidden_neurons]
@@ -351,14 +337,14 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
     d_to_i = Connection(data, layer.input)
     d_to_i.connect_one_to_one(data, layer.input)
     ## input to hidden
-    W = rand(len(layer.input),len(layer.hidden))*mV
-    W = clip(W, 0, artificial_wmax)
-    i_to_h = DelayConnection(layer.input,  layer.hidden, structure='dense', delay=True)
+    W = rand(len(layer.input),len(layer.hidden))
+    #W = clip(W, 0, artificial_wmax)
+    i_to_h = DelayConnection(layer.input,  layer.hidden, structure='dense', max_delay=5.0*ms)
     i_to_h.connect(layer.input, layer.hidden, W)
     ## hidden to output
-    W=rand(len(layer.hidden),len(layer.output))*mV
-    W = clip(W, 0, artificial_wmax)
-    h_to_o = DelayConnection(layer.hidden, layer.output, structure='dense', delay=True)
+    W=rand(len(layer.hidden),len(layer.output))
+    #W = clip(W, 0, artificial_wmax)
+    h_to_o = DelayConnection(layer.hidden, layer.output, structure='dense', max_delay=5.0*ms)
     h_to_o.connect(layer.hidden, layer.output, W)
     connection = connections(d_to_i, i_to_h, h_to_o)
     b = bpnn(connection, layer, clock=slow_clock)
@@ -374,109 +360,6 @@ def backPropagate_setup(input_neurons, hidden_neurons, output_neurons):
 
 
 
-    ## Lots of hacks till the end of bpnn_
-    @network_operation(slow_clock)
-    def bpnn_():
-        #print pre_mon.spiketimes, post_mon.spiketimes
-
-        ## Constants
-        tau_ = 7
-        n_ = 0.05
-
-        ## This is a major hack... the reason for this is the data is stored
-        ## with a "unit" ms/mv etc. and when converted to a float it happens
-        ## to be a really tiny decimal and is not useful in the calculations
-        ms_   = lambda x: x*10000
-
-
-        ## Get the differences between spike times, 
-        ## this will give us the target value we need
-        t_d     = xor_diff(data_mon.spiketimes[0] - data_mon.spiketimes[1])
-        bools   = t_d[0]
-        t_j_d   = t_d[1]
-        d_k     = t_d[2]
-
-        ## Current time conversion
-        time    =  int(floor((float(slow_clock.t)*1000)/16))
-        print "time:", time
-
-        t_j_a = lambda i: out_mon.spiketimes[i][time]
-        t_i_a = lambda i: hidden_mon.spiketimes[i][time]
-        t_h_a = lambda i: data_mon.spiketimes[i][time]
-
-        
-        gamma_j = lambda j: gamma_j_(connections.hidden_to_output, j)
-        gamma_i = lambda j: gamma_i_(connections.input_to_hidden,  j)
-        dw_ij   = lambda i,j: -(n_*(epsilon(ms_(t_j_a(j))-ms_(t_i_a(i))) * gamma_j(j)))
-        
-
-        def epsilon(t):
-            return (t/tau_)*exp(1-(t/tau_))
-
-        def depsilon(t):
-            return -(exp(1-t/tau_)*t)/tau_**2 + (exp(1-t/tau_)/tau_)
-    
-        def dy(dy, dt):
-            ## Formula [2] SpikeProp, Bohte.
-            ## y.i(t) = epsilon(t-t.i)
-            return depsilon(ms_(dt)-ms_(dy))
-
-        def gamma_j_(c, j):
-            ## Formula [12] SpikeProp, Bohte.
-            ## 
-            ##    t[j][desired] - t[j][actual]
-            ##   ---------------------------------------------------
-            ##    sum w.ij(pd y.i(t[j][actual])/pd t[j][actual])
-            ##  i subset j 
-            sum = 0.0  
-            ## desired - actual
-            top = t_j_d[time] - t_j_a(j)
-            ## convert to a usable unit
-            top = ms_(top)
-            ## from the last layer to this one
-            for i in xrange(c.W.shape[0]):
-                ## sum all the connection weights 
-                ## times the derivative of epsilon
-                sum += c.W[i,j] * dy(t_i_a(i), t_j_a(j)) 
-                
-            return top/sum
-
-        def gamma_i_(connection, i):
-            sum = 0.0
-            for j in xrange(connections.hidden_to_output.W.shape[1]):
-                sum += gamma_j(j) * connections.hidden_to_output.W[i,j] * depsilon(ms_(t_i_a(i))) 
-                
-            conn_sum = 0.0
-            for h in xrange(connection.W.shape[0]):
-                conn_sum += connection.W[h, i] * depsilon(ms_(t_i_a(i))) 
-
-            return sum/conn_sum
-        
-        def error_():
-            sum = 0.0
-            for x in xrange(1):
-                sum += ms_(t_j_a(x)) - ms_(t_j_d[time])
-            return 0.5*(sum**2)
-
-        if ms_(float(slow_clock.t)) > 32 and len(t_j_d) > time:
-            for j in xrange(connections.hidden_to_output.W.shape[1]):
-                print "Gamma_j:", gamma_j(j), "node:", j
-                
-            for j in xrange(connections.hidden_to_output.W.shape[1]):
-                for i in xrange(connections.hidden_to_output.W.shape[0]):
-                    print "delta w(%d,%d):" % (i,j), dw_ij(i, j)
-                    #print optimize.fmin(dw,[0],args=(connection.hidden_to_output,i,j))
-                    print ms_(t_j_a(j)),ms_(t_i_a(i))
-
-            print "Error:", error_()
-            #print "Gamma_i:", gamma_i(0)
-            #print stdp.Ap
-            print ms_(stdp.A_pre), ms_(stdp.A_post)#, ms_(stdp.tau_pre), ms_(stdp.tau_post)
-            print ms_(t_j_d[time] - t_j_a(0))
-            #time += 1
-            
-        
-    #net.add(bpnn_)   
     net.add(neurons)
     return neurons, layer, connection
 
