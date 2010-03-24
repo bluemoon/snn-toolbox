@@ -179,8 +179,8 @@ class spikeprop:
                 for h in range(self.inputs):
                     spike_time = self.input_time[h]
                     if t >= spike_time:
-                        print self.hidden_weights[i,h].ndim
                         out += link_out(self.hidden_weights[i,h], t, spike_time, self.synapses, self.decay)
+
                 self.hidden_time[i] = t
                 t += self.time_step
 
