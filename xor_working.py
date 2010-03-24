@@ -9,10 +9,11 @@ from random import randrange
 import sympy
 
 
+
 ########### Parameters
 on          = 0
 off         = 6
-run_time    = 800*ms
+run_time    = 500*ms
 tau         = 7*ms
 eqs_n = """
 #du/dt=-u/tau : 1
@@ -119,6 +120,7 @@ class bpnn(NetworkOperation):
         self.tau         = 7
         self.learn_rate  = 0.05
 
+
     def post_d(self, j):
         target = xor_diff(self.d_mon.spiketimes[0] - self.d_mon.spiketimes[1])[1]
         return target[self.time]
@@ -202,6 +204,8 @@ class bpnn(NetworkOperation):
         return 0.5*(sum**2)
 
     def _set_time(self):
+        ## there are 2 pre-useful time cycles we dont need, so start 
+        ## off with -2
         self.time =  int(floor((float(self.clock.t)*1000)/16.0))-2
 
     def __call__(self):
