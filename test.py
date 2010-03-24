@@ -38,26 +38,28 @@ if t == 'from_cpp':
         x+=1
 
 if t == 'from_python':
-    prop = spikeprop.spikeprop(3, 5, 1, 16, learning_rate=0.01, threshold=50)
-    prop.init_2()
+    prop = spikeprop.spikeprop(3, 5, 1, 16, learning_rate=0.001, threshold=1)
+    prop.init_3()
     def run_test():
         iterations = 5000
-        total_error = 0.0
         x = 0
-        while x < iterations and prop.failed == False:
-            c_error = 0
+        avail = [1,2,3,4]
+        total_error = 10.0
+        while x < iterations and total_error > 2.0 and prop.failed == False:
+            total_error = 0.0
             for w in xrange(4):
                 input, desired = spikeprop.xor(w)
-                error = prop.adapt(input, desired)
+                error = prop.adapt(input, desired) 
                 if error == False:
                     break
-                c_error += error
-
-            print "XOR: %d Error: %fms" % (x, c_error)
-            
+                
+                total_error += error
+                print "XOR: %d-%d Error: %fms" % (x,w, error)
+                
+            print "XOR: %d Total Error: %fms" % (x, total_error)
             x += 1
             
-        if prop.failed == False:
+        if prop.failed == True:
             print "!!! Failed !!!"
             return
         

@@ -5,6 +5,9 @@
 import  numpy as np
 cimport numpy as np
 cimport cython
+#cimport python
+DECAY    = 7
+SYNAPSES = 16
 
 F_DTYPE = np.float64
 ctypedef np.float64_t F_DTYPE_t
@@ -13,50 +16,61 @@ cdef extern from "math.h" nogil:
     double c_exp "exp" (double)
     
 cdef extern from "stdlib.h" nogil:
-    int    c_rand "rand" ()
+    int    c_rand  "rand" ()
     int    c_srand "srand" (int)
-    double c_fmod "fmod" (double, double)
+    double c_fmod  "fmod" (double, double)
+
 
 @cython.profile(False)
-cpdef inline double e(double time, int decay):
-    cdef double e = 0
-    if time > 0:
-        e = ((time/decay)*c_exp(1.0-(time/decay)))
-    return e
-
-@cython.profile(False)
-cpdef inline double y(double time, double spike_time, int delay, int decay):
-    return e((time-spike_time-delay), decay)
-
-@cython.profile(False)
-def link_out(np.ndarray[F_DTYPE_t] weights, double time, double spike, int synapses, int decay):
-    assert weights.dtype == F_DTYPE
+@cython.boundscheck(False)
+cpdef inline double e(double time):
+    cdef double t1, t2, t3, t4
+    cdef int decay = DECAY
+    t4 = 0
     
-    cdef double output  = 0.0
-    cdef double sum
-    cdef double y  
-    cdef double weight
-    cdef int delay
-    cdef int k 
+    if time > 0:
+        t1 = (time/decay)
+        t2 = c_exp(1-t1)
+        t3 = (time*t2)
+        t4 = t3/decay
+        
+    return t4
 
+@cython.profile(False)
+@cython.boundscheck(False)
+cdef double y(double time, double spike, int delay):
+    return e(time-spike-delay)
+    
+@cython.boundscheck(False)
+cdef double link_out(np.ndarray weights, double time, double spike):
+    cdef double weight, sum, y
+    cdef int delay
+    cdef int k
+    
+    output = 0.0
     if time >= spike:
-        for k in range(synapses):
+        for k in range(SYNAPSES):
             weight = weights[k]
             delay = k+1
-            sum = (spike + delay)
-            if time >= sum:
-                y = e((time-spike-delay), decay)
-                sum = (weight * y)
-                output += sum
+            if time >= (spike + delay):
+                y = e((time-spike-delay))
+                output += (weight * y)
                 
     return output
 
-class spikeprop:    
+cpdef double srfd(double time):
+    cdef double asrfd = 0
+    if time <= 0:
+        return asrfd
+    else:
+        return e(time) * ((1.0/time) - (1.0/DECAY))
+    
+cdef class spikeprop:    
     ## without:
     ## python test.py  140.49s user 2.65s system 75% cpu 3:08.61 total
     ## with:
     ## python test.py  130.38s user 2.15s system 75% cpu 2:55.88 total
-    """
+    
     cdef int synapses
     cdef int inputs
     cdef int hiddens
@@ -64,6 +78,7 @@ class spikeprop:
     cdef int threshold
     cdef int ipsp
     cdef int decay
+    cdef int seed
 
     cdef bool fail
     cdef bool allow_negative_weights
@@ -79,9 +94,10 @@ class spikeprop:
 
     cdef np.ndarray output_weights
     cdef np.ndarray hidden_weights
-    """
+    
     def __init__(self, int inputs, int hiddens, int outputs, int synapses,
-                 double learning_rate=0.1, int threshold=50):
+                 double learning_rate=0.01, int threshold=50):
+        
         self.synapses = synapses
         self.inputs  = inputs
         self.hiddens = hiddens
@@ -97,7 +113,8 @@ class spikeprop:
         self.allow_negative_weights = False
         
         self.decay =  7
-
+        self.seed = 3
+        
         ## Delta vectors
         self.delta_J = np.ndarray(self.outputs)
         self.delta_I = np.ndarray(self.hiddens)
@@ -109,11 +126,11 @@ class spikeprop:
         self.desired_time = np.zeros(self.outputs)
 
         ## Weight Matrices
-        self.hidden_weights = np.random.rand(self.hiddens, self.inputs, self.synapses)*10
-        self.output_weights = np.random.rand(self.outputs, self.hiddens, self.synapses)*10
+        self.hidden_weights = np.random.rand(self.hiddens, self.inputs, self.synapses).astype(np.float64)*10.0
+        self.output_weights = np.random.rand(self.outputs, self.hiddens, self.synapses).astype(np.float64)*10.0
         #self.hidden_weights = np.ndarray(shape=(self.hiddens, self.inputs, self.synapses))
         #self.output_weights = np.ndarray(shape=(self.outputs, self.hiddens, self.synapses))
-        
+        print self.hidden_weights
         
     def _fail(self):
         return self.fail
@@ -130,48 +147,62 @@ class spikeprop:
         for j in xrange(self.outputs):
             print "desired neuron %d: %fms " % (j, self.desired_time[j])
 
-    def init_2(self):
+    def init_1(self):
         for i in range(self.hiddens):
             for h in range(self.inputs):
-                r = c_fmod(c_rand(), 10)
                 for k in range(self.synapses):
-                    self.hidden_weights[i,h,k] = np.float64(r+1)
+                    r = c_rand() % 10.0
+                    self.hidden_weights[i,h,k] = r+1.0
 
         for i in range(self.outputs):
             for h in range(self.hiddens):
-                r = c_fmod(c_rand(), 10)
-                print r
                 for k in range(self.synapses):
-                    self.output_weights[i,h,k] = np.float64(r+1)
+                    r = c_rand() % 10.0
+                    self.output_weights[i,h,k] = r+1.0
                     
-    def init_3(self):
-        c_srand(4)
+    def init_2(self):
+        c_srand(self.seed)
         for i in range(self.hiddens):
             for h in range(self.inputs):
-                rand = c_rand()
-                r = (rand % 10)
+                r = c_rand() % 10.0
                 for k in range(self.synapses):
-                    self.hidden_weights[i,h,k] = (r+1.0)/(14.0*5)
+                    self.hidden_weights[i,h,k] = r+1.0
+
+        for i in range(self.outputs):
+            for h in range(self.hiddens):
+                r = c_rand() % 10.0
+                for k in range(self.synapses):
+                    self.output_weights[i,h,k] = r+1.0
+                    
+        print self.output_weights
+        
+    def init_3(self):
+        c_srand(self.seed)
+        for i in range(self.hiddens):
+            for h in range(self.inputs):
+                for k in range(self.synapses):
+                    rand = c_rand()
+                    r = (rand % 10)
+                    self.hidden_weights[i,h,k] = 1+(r+1.0)/(14.0*5)
 
         for j in range(self.outputs):
             for i in range(self.hiddens):
-                r = (c_rand() % 10)
                 for k in range(self.synapses):
-                    self.output_weights[j,i,k] = (r+1.0)/(14.0*5)
+                    r = (c_rand() % 10)
+                    self.output_weights[j,i,k] = 1+(r+1.0)/(14.0*5)
                                    
         print self.hidden_weights
         
     def no_adapt(self, in_times, desired_times):
-        cdef Py_ssize_t h,i,j,k
         self.input_time   = in_times
         self.desired_time = desired_times
-        cdef float out = 0.0
-        cdef float t = 0.0
+        cdef double out = 0.0
+        cdef double t   = 0.0
 
         ## for each neuron find spike time
         ## for each hidden neuron
         for i in range(self.hiddens):
-            t = 0.0
+            t   = 0.0
             out = 0.0
             while (out < self.threshold and t < 50.0):
                 out = 0.0
@@ -179,8 +210,8 @@ class spikeprop:
                 for h in range(self.inputs):
                     spike_time = self.input_time[h]
                     if t >= spike_time:
-                        out += link_out(self.hidden_weights[i,h], t, spike_time, self.synapses, self.decay)
-
+                        out += link_out(self.hidden_weights[i,h], t, spike_time)
+                    
                 self.hidden_time[i] = t
                 t += self.time_step
 
@@ -196,7 +227,7 @@ class spikeprop:
                 for i in range(self.hiddens):
                     spike_time = self.hidden_time[i]
                     if t >= spike_time:
-                        ot = link_out(self.output_weights[j,i], t, spike_time, self.synapses, self.decay)
+                        ot = link_out(self.output_weights[j,i], t, spike_time)
                         if i >= (self.hiddens-self.ipsp):
                             out=out-ot
                         else:
@@ -217,14 +248,14 @@ class spikeprop:
         if self.fail:
             return False
 
-        cdef Py_ssize_t h,i,j,k
+        #cdef Py_ssize_t h,i,j,k
 
         ## for each output neuron
         for j in xrange(self.outputs):
             self.delta_J[j] = self._e12(j)
         ## for each hidden neuron
         for i in xrange(self.hiddens):
-            self.delta_I[i] = self._e17(i, self.delta_J)
+            self.delta_I[i] = self._e17(i)
         
         ## For each output neuron
         for j in range(self.outputs):
@@ -234,29 +265,29 @@ class spikeprop:
             for i in range(self.hiddens):
                 ## Spike time of the hidden neuron
                 spike_time = self.hidden_time[i]
-                for k in range(self.synapses):
+                for k in range(SYNAPSES):
                     delay = k+1
                     old_weight = self.output_weights[j,i,k]
-                    if i >= (self.hiddens-self.ipsp):
+                    if i >= self.hiddens-self.ipsp:
                         change_weight = -self.change(actual_time_j, spike_time, delay, delta)
                     else:
                         change_weight = self.change(actual_time_j, spike_time, delay, delta)
                     
                     new_weight = old_weight + change_weight
                     if self.allow_negative_weights:
-                        self.output_weights[j,i,k] = new_weight
+                        self.output_weights[j,i,k] += change_weight
                     else:
-                        if new_weight >= 0:
-                            self.output_weights[j,i,k] = new_weight
+                        if new_weight >= 0.0:
+                            self.output_weights[j,i,k] += change_weight
                         else:
-                            self.output_weights[j,i,k] = 0
+                            self.output_weights[j,i,k] = 0.0
         
         for i in xrange(self.hiddens):
             actual_time_i = self.hidden_time[i]
             delta = self.delta_I[i]
             for h in xrange(self.inputs):
                 spike_time = self.input_time[h]
-                for k in xrange(self.synapses):
+                for k in xrange(SYNAPSES):
                     delay=k+1
                     old_weight=self.hidden_weights[i,h,k]
                     if i >= self.hiddens-self.ipsp:
@@ -266,19 +297,14 @@ class spikeprop:
 
                     new_weight = old_weight + change_weight
                     if self.allow_negative_weights:
-                        self.hidden_weights[i,h,k] = new_weight
+                        self.hidden_weights[i,h,k] += change_weight#new_weight
                     else:
-                        if new_weight >= 0:
-                            self.hidden_weights[i,h,k] = new_weight
+                        if new_weight >= 0.0:
+                            self.hidden_weights[i,h,k] += change_weight#new_weight
                         else:
-                            self.hidden_weights[i,h,k] = 0
+                            self.hidden_weights[i,h,k] = 0.0
 
         return self.error()
-
-    
-
-
-    
 
     def _e12(self, j):
         return (self.desired_time[j]-self.output_time[j])/(self._e12bottom(j))
@@ -296,8 +322,10 @@ class spikeprop:
         return ot
  
     def _e17top(self, i, delta_j):
-        cdef double ot = 0.0
-        cdef double actual = 0.0
+        #cdef double ot = 0.0
+        #cdef double actual = 0.0
+        ot = 0.0
+        actual = 0.0
         spike_time = self.hidden_time[i]
         for j in range(self.outputs):
             actual_time_j = self.output_time[j]
@@ -326,21 +354,22 @@ class spikeprop:
         else:
             return actual
 
-    def _e17(self, i, delta_j):
+    def _e17(self, i):
         ## 100%
-        actual = self._e17top(i, delta_j)/self._e17bottom(i)
+        actual = self._e17top(i, self.delta_J)/self._e17bottom(i)
         return actual
             
 
     def change(self, actual_time, spike_time, delay, delta):
-        return (-self.learning_rate * y(actual_time, spike_time, delay, self.decay)*delta)
+        return (-self.learning_rate * y(actual_time,spike_time,delay) * delta)
 
-    def link_out_d(self, weights, spike_time, time):
+    def link_out_d(self, np.ndarray weights, double spike_time, double time):
         ## 100%
         cdef double output = 0.0
         cdef int delay
         cdef Py_ssize_t k
-        
+
+        #output = 0.0
         if time >= spike_time:
             for k in range(self.synapses):
                 weight = weights[k]
@@ -348,7 +377,7 @@ class spikeprop:
                 ## will fire when current time 
                 ## (timeT) >= time of spike + delay otherwise zero
                 if time >= (spike_time + delay):
-                    output += (weight * self.srfd((time - delay - spike_time)))
+                    output += (weight * srfd((time - delay - spike_time)))
                 ## else no charge
 
         ## else none will fire
@@ -357,13 +386,13 @@ class spikeprop:
     def srfd(self, time):
         ## 100%
         if time >= 0.0:
-            return e(time, self.decay) *((1.0/time) - (1.0/self.decay))
+            return e(time) *((1.0/time) - (1.0/self.decay))
         else:
             return 0.0
 
     def error(self):
-        cdef double total = 0.0
-        cdef e = 0.0
+        #cdef double total = 0.0
+        total = 0.0
         for j in range(self.outputs):
             total += (self.output_time[j]-self.desired_time[j]) ** 2.0
 
