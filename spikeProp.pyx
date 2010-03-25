@@ -42,8 +42,8 @@ cdef double y(double time, double spike, int delay):
     return e(time-spike-delay)
     
 @cython.boundscheck(False)
-cdef double link_out(np.ndarray weights, double time, double spike):
-    cdef double weight, sum, y
+cdef double link_out(np.ndarray weights, double spike, double time):
+    cdef double weight, sum
     cdef int delay
     cdef int k
     
@@ -53,8 +53,7 @@ cdef double link_out(np.ndarray weights, double time, double spike):
             weight = weights[k]
             delay = k+1
             if time >= (spike + delay):
-                y = e((time-spike-delay))
-                output += (weight * y)
+                output += (weight * y(time,spike,delay))
                 
     return output
 
@@ -97,6 +96,12 @@ cdef class spikeprop:
     
     def __init__(self, int inputs, int hiddens, int outputs, int synapses,
                  double learning_rate=0.01, int threshold=50):
+        ## Verified:
+        ##  Weight Initialisation
+        ##  no_adapt
+        ##  y
+        ##  e
+        ##  link_out
         
         self.synapses = synapses
         self.inputs  = inputs
@@ -196,9 +201,11 @@ cdef class spikeprop:
     def no_adapt(self, in_times, desired_times):
         self.input_time   = in_times
         self.desired_time = desired_times
+        ##print self.input_time, self.desired_time
         cdef double out = 0.0
         cdef double t   = 0.0
-
+        cdef Py_ssize_t h,i,j,k
+        
         ## for each neuron find spike time
         ## for each hidden neuron
         for i in range(self.hiddens):
@@ -210,7 +217,7 @@ cdef class spikeprop:
                 for h in range(self.inputs):
                     spike_time = self.input_time[h]
                     if t >= spike_time:
-                        out += link_out(self.hidden_weights[i,h], t, spike_time)
+                        out += link_out(self.hidden_weights[i,h], spike_time, t)
                     
                 self.hidden_time[i] = t
                 t += self.time_step
@@ -227,13 +234,13 @@ cdef class spikeprop:
                 for i in range(self.hiddens):
                     spike_time = self.hidden_time[i]
                     if t >= spike_time:
-                        ot = link_out(self.output_weights[j,i], t, spike_time)
-                        if i >= (self.hiddens-self.ipsp):
+                        ot = link_out(self.output_weights[j,i], spike_time, t)
+                        if (i >= self.hiddens-self.ipsp):
                             out=out-ot
                         else:
                             out=out+ot
-
-
+                
+                ## End: while
                 self.output_time[j] = t
                 t += self.time_step             
 
@@ -248,7 +255,7 @@ cdef class spikeprop:
         if self.fail:
             return False
 
-        #cdef Py_ssize_t h,i,j,k
+        cdef Py_ssize_t h,i,j,k
 
         ## for each output neuron
         for j in xrange(self.outputs):
@@ -275,10 +282,10 @@ cdef class spikeprop:
                     
                     new_weight = old_weight + change_weight
                     if self.allow_negative_weights:
-                        self.output_weights[j,i,k] += change_weight
+                        self.output_weights[j,i,k] = new_weight
                     else:
                         if new_weight >= 0.0:
-                            self.output_weights[j,i,k] += change_weight
+                            self.output_weights[j,i,k] = new_weight
                         else:
                             self.output_weights[j,i,k] = 0.0
         
@@ -297,10 +304,10 @@ cdef class spikeprop:
 
                     new_weight = old_weight + change_weight
                     if self.allow_negative_weights:
-                        self.hidden_weights[i,h,k] += change_weight#new_weight
+                        self.hidden_weights[i,h,k] = new_weight
                     else:
                         if new_weight >= 0.0:
-                            self.hidden_weights[i,h,k] += change_weight#new_weight
+                            self.hidden_weights[i,h,k] = new_weight#new_weight
                         else:
                             self.hidden_weights[i,h,k] = 0.0
 
@@ -313,10 +320,10 @@ cdef class spikeprop:
         ot = 0.0
         for i in range(self.hiddens):
             if i >= (self.hiddens - self.ipsp):
-                ot -=  self.link_out_d(self.output_weights[j,i], \
+                ot = ot - self.link_out_d(self.output_weights[j,i], \
                 self.hidden_time[i], self.output_time[j])
             else:
-                ot +=  self.link_out_d(self.output_weights[j,i], \
+                ot = ot + self.link_out_d(self.output_weights[j,i], \
                 self.hidden_time[i], self.output_time[j])
 
         return ot
@@ -333,8 +340,8 @@ cdef class spikeprop:
             if i >= (self.hiddens-self.ipsp):
                 ot = -self.link_out_d(self.output_weights[j,i], spike_time, actual_time_j)
             else:
-                ot = -self.link_out_d(self.output_weights[j,i], spike_time, actual_time_j)
-            actual += (dj*ot)
+                ot = self.link_out_d(self.output_weights[j,i], spike_time, actual_time_j)
+            actual = actual + (dj*ot)
 
         return actual
     
@@ -347,7 +354,7 @@ cdef class spikeprop:
         for h in range(self.inputs):
             spike_time = self.input_time[h]
             ot = self.link_out_d(self.hidden_weights[i,h], spike_time, actual_time)
-            actual += ot
+            actual = actual + ot
 
         if i >= (self.hiddens-self.ipsp):
             return -actual
@@ -361,7 +368,7 @@ cdef class spikeprop:
             
 
     def change(self, actual_time, spike_time, delay, delta):
-        return (-self.learning_rate * y(actual_time,spike_time,delay) * delta)
+        return (-self.learning_rate * y(actual_time, spike_time, delay) * delta)
 
     def link_out_d(self, np.ndarray weights, double spike_time, double time):
         ## 100%
@@ -391,12 +398,11 @@ cdef class spikeprop:
             return 0.0
 
     def error(self):
-        #cdef double total = 0.0
-        total = 0.0
+        cdef double total = 0.0
         for j in range(self.outputs):
-            total += (self.output_time[j]-self.desired_time[j]) ** 2.0
+            total += (self.output_time[j]-self.desired_time[j]) ** 2
 
-        return (total/2.0)
+        return (total/2)
 
 
 

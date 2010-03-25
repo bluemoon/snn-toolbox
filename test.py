@@ -38,12 +38,11 @@ if t == 'from_cpp':
         x+=1
 
 if t == 'from_python':
-    prop = spikeprop.spikeprop(3, 5, 1, 16, learning_rate=0.001, threshold=1)
-    prop.init_3()
+    prop = spikeprop.spikeprop(3, 5, 1, 16, learning_rate=1.0, threshold=50)
+    prop.init_2()
     def run_test():
         iterations = 5000
         x = 0
-        avail = [1,2,3,4]
         total_error = 10.0
         while x < iterations and total_error > 2.0 and prop.failed == False:
             total_error = 0.0
