@@ -3,7 +3,7 @@ import pstats, cProfile
 import numpy as np
 import profile
 
-profile.Profile.bias = 2.999750025e-06
+#profile.Profile.bias = 2.999750025e-06
 
 def xor(which):
     if which == 0:
@@ -70,7 +70,7 @@ if t == 'from_python':
             
         print "total_error: %d" % total_error
         
-    #cProfile.run("run_test()","Profile.prof")
-    #s = pstats.Stats("Profile.prof")
-    #s.strip_dirs().sort_stats("time").print_stats()
-    run_test()
+    cProfile.run("run_test()","Profile.prof")
+    s = pstats.Stats("Profile.prof")
+    s.strip_dirs().sort_stats("time").print_stats()
+    #run_test()

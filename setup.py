@@ -2,7 +2,9 @@ from distutils.core import setup
 from distutils.extension import Extension
 from Cython.Distutils import build_ext
 
-ext_modules = [Extension("spikeprop", ["spikeProp.pyx"],
+ext_modules = [Extension("spikeprop", ["spike_prop_.c",
+                                       "spikeProp.pyx"],
+                                       
                          include_dirs=[
                              '/usr/local/lib/python2.6/dist-packages/numpy/core/include/',
                              ]
