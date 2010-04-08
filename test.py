@@ -1,9 +1,13 @@
+from optparse import OptionParser
 import spikeprop
-import pstats, cProfile
+import pstats
+import cProfile
 import numpy as np
 import profile
 
-#profile.Profile.bias = 2.999750025e-06
+parser = OptionParser()
+parser.add_option("-d", "--debug", dest="debug", action="store_true")
+(options, args) = parser.parse_args()
 
 def xor(which):
     if which == 0:
@@ -38,8 +42,11 @@ if t == 'from_cpp':
         x+=1
 
 if t == 'from_python':
-    prop = spikeprop.spikeprop(3, 5, 1, 16, learning_rate=1.0, threshold=50)
-    prop.init_2()
+    prop = spikeprop.spikeprop(3, 5, 1, 4, learning_rate=1.0, threshold=50)
+    prop.init_1()
+    #input, desired = spikeprop.xor(1)
+    #prop.train(input, desired)
+    #error = prop.backwards_pass(input, desired) 
     def run_test():
         iterations = 5000
         x = 0
@@ -64,13 +71,17 @@ if t == 'from_python':
         
         for w in xrange(4):
             input, desired = spikeprop.xor(w)
-            error = prop.no_adapt(input, desired)
+            error = prop.forward_pass(input, desired)
             total_error += error
             prop.print_times()
             
         print "total_error: %d" % total_error
         
-    cProfile.run("run_test()","Profile.prof")
-    s = pstats.Stats("Profile.prof")
-    s.strip_dirs().sort_stats("time").print_stats()
-    #run_test()
+    if options.debug:
+        cProfile.run("run_test()","Profile.prof")
+        s = pstats.Stats("Profile.prof")
+        s.strip_dirs().sort_stats("time").print_stats()
+    else:
+        run_test()
+
+
