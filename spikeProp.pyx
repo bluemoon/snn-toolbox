@@ -5,6 +5,7 @@
 import  numpy as np
 cimport numpy as np
 cimport cython
+cimport python as py
 from python_ref cimport Py_XINCREF, Py_XDECREF, PyObject
 
 #global total_iter_saved
@@ -17,13 +18,11 @@ from python_ref cimport Py_XINCREF, Py_XDECREF, PyObject
 #e_min = 1e318
 #e_max = 0
 #e_vals = []
+np.import_array()
 
 DEF DECAY    = 7
 DEF SYNAPSES = 16
 DEF NEURON_HIGH_COUNT = 400
-
-F_DTYPE = np.float64
-ctypedef np.float64_t F_DTYPE_t
 
 cdef extern from "math.h" nogil:
     double c_exp "exp" (double)
@@ -38,16 +37,6 @@ cdef extern from "stdlib.h" nogil:
     int    c_rand  "rand" ()
     int    c_srand "srand" (int)
     double c_fmod  "fmod" (double, double)
-
-cdef extern from "numpy/arrayobject.h":
-    ctypedef int intp
-    ctypedef extern class numpy.ndarray [object PyArrayObject]:
-        cdef char *data
-        cdef int nd
-        cdef intp *dimensions
-        cdef intp *strides
-        cdef int flags
-
 
     
 """
@@ -94,32 +83,31 @@ cdef double y(double time, double spike, int delay):
     return e(time-spike-delay)
 
 @cython.boundscheck(False)
-cdef double link_out(ndarray weights, double spike, double time):
+cdef double link_out(np.ndarray weights, double spike, double time):
     cdef double weight
     cdef int delay
     cdef int k, i    
     cdef double *p = <double *>weights.data
 
     cdef double output = 0.0
-    if time >= spike:
-        ## if time >= (spike + delay)
-        ## delay_max = SYNAPSES
-        ## the delay is 1...16
-        ## if time >= (spike + {1...16})
-        ## so i need to find the minimum delay size and
-        ## start the loop from there
-        i = int(time-spike)
-        ##c_modf((time - spike), &d)
-        ##i = <int>d
-        ##total_iter_saved += SYNAPSES - i
-        
-        for k from 0 <= k < i:
-            delay = k+1
-            #if time >= (spike + delay):
-            weight = p[k]
-            output += (weight * e(time-spike-delay))
-            #else:
-            #    print "does this happen?!"
+    ## if time >= (spike + delay)
+    ## delay_max = SYNAPSES
+    ## the delay is 1...16
+    ## if time >= (spike + {1...16})
+    ## so i need to find the minimum delay size and
+    ## start the loop from there
+    i = int(time-spike)
+    ##c_modf((time - spike), &d)
+    ##i = <int>d
+    ##total_iter_saved += SYNAPSES - i
+    
+    for k from 0 <= k < i:
+        delay = k+1
+        #if time >= (spike + delay):
+        weight = p[k]
+        output += (weight * e(time-spike-delay))
+        #else:
+        #    print "does this happen?!"
                 
     #print sum - output
     return output
@@ -135,10 +123,24 @@ cdef double srfd(double time):
 
     
     
+cdef class base:
+    cdef initialise_weights(self, w_type):
+        c_srand(self.seed)
+        for i in range(self.hiddens):
+            for h in range(self.inputs):
+                r = c_rand() % 10.0
+                for k in range(SYNAPSES):
+                    self.hidden_weights[i,h,k] = r+1.0
 
+        for i in range(self.outputs):
+            for h in range(self.hiddens):
+                r = c_rand() % 10.0
+                for k in range(SYNAPSES):
+                    self.output_weights[i,h,k] = r+1.0
+                    
         
 
-cdef class spikeprop:    
+cdef class spikeprop_base:    
     ## without:
     ## python test.py  140.49s user 2.65s system 75% cpu 3:08.61 total
     ## with:
@@ -169,18 +171,12 @@ cdef class spikeprop:
     cdef np.ndarray last_h_derivatives
     cdef np.ndarray last_o_derivatives
 
-    cdef ndarray output_weights
+    cdef np.ndarray output_weights
     cdef np.ndarray hidden_weights
     cdef object descent
     
     def __init__(self, int inputs, int hiddens, int outputs, int synapses,
                  double learning_rate=0.01, int threshold=50, bool QuickProp=True):
-        ## Verified:
-        ##  Weight Initialisation
-        ##  no_adapt
-        ##  y
-        ##  e
-        ##  link_out
         
         self.synapses = synapses
         self.inputs  = inputs
@@ -300,28 +296,34 @@ cdef class spikeprop:
     
     @cython.boundscheck(False)
     cpdef object forward_pass(self, np.ndarray in_times, np.ndarray desired_times):
-        self.input_time   = in_times.copy()
-        self.desired_time = desired_times.copy()
+        self.input_time   = in_times
+        self.desired_time = desired_times
         cdef double out = 0.0
         cdef double t   = 0.0
         cdef double spike_time = 0.0
+        
+        cdef double *in_time = <double *>self.input_time.data
+        cdef double *hidden_time = <double *>self.hidden_time.data
+        
         cdef double *hw = <double *>self.hidden_weights.data
-        cdef int dim = np.PyArray_DIMS(self.hidden_weights)[0]
+        cdef int hw_dim = np.PyArray_DIMS(self.hidden_weights)[0]
+
         cdef int i, h
         ## for each neuron find spike time
         ## for each hidden neuron
         for i from 0 <= i < self.hiddens:
+            ## reset time and output total
             t   = 0.0
             out = 0.0
             while (out < self.threshold and t < 50.0):
                 out = 0.0
                 ## for each connection to input
                 for h from 0 <= h < self.inputs:
-                    spike_time = self.input_time[h]
-                    #if t >= spike_time:
-                    out += link_out(hw[i*dim+h], spike_time, t)
+                    spike_time = in_time[h]
+                    if t >= spike_time:
+                        out += link_out(self.hidden_weights[py.PyInt_FromLong(i), py.PyInt_FromLong(h)], spike_time, t)
                     
-                self.hidden_time[i] = t
+                hidden_time[i] = t
                 t = t + self.time_step
 
             if t >= 50.0:

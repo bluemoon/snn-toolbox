@@ -42,7 +42,7 @@ if t == 'from_cpp':
         x+=1
 
 if t == 'from_python':
-    prop = spikeprop.spikeprop(3, 5, 1, 4, learning_rate=1.0, threshold=50)
+    prop = spikeprop.spikeprop_base(3, 5, 1, 4, learning_rate=1.0, threshold=50)
     prop.init_1()
     #input, desired = spikeprop.xor(1)
     #prop.train(input, desired)
