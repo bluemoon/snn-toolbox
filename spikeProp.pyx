@@ -154,8 +154,8 @@ cdef class spikeprop_base:
     cdef int ipsp
     cdef int seed
 
-    cdef bool fail
-    cdef bool allow_negative_weights
+    cdef bint fail
+    cdef bint allow_negative_weights
     cdef double learning_rate
     cdef double time_step
     cdef double decay
