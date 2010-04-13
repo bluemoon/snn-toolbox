@@ -4,7 +4,7 @@ import numpy as np
 import profile
 import fileinput
 
-prop = spikeprop.spikeprop(701, 1100, 1, 4, learning_rate=1, threshold=10)
+prop = spikeprop.spikeprop_base(701, 1100, 1, 4, learning_rate=1, threshold=10)
 prop.init_2()
 
 def process_y_line(line):

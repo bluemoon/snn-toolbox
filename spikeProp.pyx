@@ -28,7 +28,7 @@ cdef extern from "math.h" nogil:
     double c_exp "exp" (double)
     double c_modf "modf" (double, double*)
     
-cdef extern from "spike_prop.h":
+cdef extern from "spike_prop.h" nogil:
     double e(double)
 #    double srfd(double)
 #    double link_out(PyObject *weights, double spikeT, double timeT)
@@ -79,7 +79,7 @@ def e(double time):
 
 @cython.profile(False)
 @cython.boundscheck(False)
-cdef double y(double time, double spike, int delay):
+cdef double y(double time, double spike, int delay) nogil:
     return e(time-spike-delay)
 
 @cython.boundscheck(False)
@@ -113,7 +113,8 @@ cdef double link_out(np.ndarray weights, double spike, double time):
     return output
 
 
-cdef double srfd(double time):
+@cython.cdivision(True)
+cdef double srfd(double time) nogil:
     cdef double asrfd = 0
     if time <= 0:
         return asrfd
@@ -122,7 +123,7 @@ cdef double srfd(double time):
         
 
     
-    
+"""
 cdef class base:
     cdef initialise_weights(self, w_type):
         c_srand(self.seed)
@@ -137,7 +138,7 @@ cdef class base:
                 r = c_rand() % 10.0
                 for k in range(SYNAPSES):
                     self.output_weights[i,h,k] = r+1.0
-                    
+"""                    
         
 
 cdef class spikeprop_base:    
@@ -208,18 +209,19 @@ cdef class spikeprop_base:
         ## Weight Matrices
         self.hidden_weights = np.random.rand(self.hiddens, self.inputs, SYNAPSES).astype(np.float64)*10.0
         self.output_weights = np.random.rand(self.outputs, self.hiddens, SYNAPSES).astype(np.float64)*10.0
-        
+        """
         if QuickProp:
             self.last_h_derivatives = np.zeros((self.hiddens, self.inputs, SYNAPSES))
             self.last_h_derivatives = np.zeros((self.outputs, self.hiddens, SYNAPSES))
             self.h_derivatives = np.zeros((self.hiddens, self.inputs, SYNAPSES))
             self.o_derivatives = np.zeros((self.outputs, self.hiddens, SYNAPSES))
             self.decay = -0.001
+        """
         
     def _fail(self):
         return self.fail
     failed = property(_fail)
-    
+    """
     def clear_derivatives(self):
         self.last_h_derivatives = self.h_derivatives
         self.last_o_derivatives = self.o_derivatives
@@ -234,7 +236,7 @@ cdef class spikeprop_base:
             return (17.0)
         else:
             return ( np.log ( (1.0+dif) / (1.0-dif) ) )
-        
+    """    
     def print_times(self):
         print "Input times,",
         for h in xrange(self.inputs):
@@ -298,9 +300,7 @@ cdef class spikeprop_base:
     cpdef object forward_pass(self, np.ndarray in_times, np.ndarray desired_times):
         self.input_time   = in_times
         self.desired_time = desired_times
-        cdef double out = 0.0
-        cdef double t   = 0.0
-        cdef double spike_time = 0.0
+        cdef double out = 0.0, t = 0.0, spike_time = 0.0
         
         cdef double *in_time = <double *>self.input_time.data
         cdef double *hidden_time = <double *>self.hidden_time.data
@@ -308,15 +308,15 @@ cdef class spikeprop_base:
         cdef double *hw = <double *>self.hidden_weights.data
         cdef int hw_dim = np.PyArray_DIMS(self.hidden_weights)[0]
 
-        cdef int i, h
+        cdef int i=0, h=0, j=0
         ## for each neuron find spike time
         ## for each hidden neuron
         for i from 0 <= i < self.hiddens:
             ## reset time and output total
-            t   = 0.0
-            out = 0.0
+            t   = 0
+            out = 0
             while (out < self.threshold and t < 50.0):
-                out = 0.0
+                out = 0
                 ## for each connection to input
                 for h from 0 <= h < self.inputs:
                     spike_time = in_time[h]
@@ -573,14 +573,7 @@ cdef class spikeprop_base:
 
         ## else none will fire
         return output
-    """
-    def srfd(self, time):
-        ## 100%
-        if time >= 0.0:
-            return e(time) *((1.0/time) - (1.0/self.decay))
-        else:
-            return 0.0
-    """
+
     cpdef error(self):
         cdef double total = 0.0
         for j in range(self.outputs):
@@ -608,6 +601,3 @@ def xor(which):
         desired = np.array([16.0])
 
     return input, desired
-
-
-

@@ -7,6 +7,7 @@ import profile
 
 parser = OptionParser()
 parser.add_option("-d", "--debug", dest="debug", action="store_true")
+parser.add_option("-n", "--ng", dest="ng", action="store_true")
 (options, args) = parser.parse_args()
 
 def xor(which):
@@ -31,7 +32,48 @@ def xor(which):
 
 t = 'from_python'
 
-
+if options.ng:
+    from spikeprop_ng import spikeprop_faster
+    prop = spikeprop_faster(3, 5, 1)
+    prop.initialise_weights()
+    
+    def run_test():
+        iterations = 5000
+        x = 0
+        total_error = 10.0
+        while x < iterations and total_error > 2.0 and prop.failed == False:
+            total_error = 0.0
+            for w in xrange(4):
+                input, desired = spikeprop.xor(w)
+                error = prop.adapt(input, desired) 
+                if error == False:
+                    break
+                
+                total_error += error
+                print "XOR: %d-%d Error: %fms" % (x,w, error)
+                
+            print "XOR: %d Total Error: %fms" % (x, total_error)
+            x += 1
+            
+        if prop.failed == True:
+            print "!!! Failed !!!"
+            return
+        
+        for w in xrange(4):
+            input, desired = spikeprop.xor(w)
+            error = prop.forward_pass(input, desired)
+            total_error += error
+            #prop.print_times()
+            
+        print "total_error: %d" % total_error
+        
+    if options.debug:
+        cProfile.run("run_test()","Profile.prof")
+        s = pstats.Stats("Profile.prof")
+        s.strip_dirs().sort_stats("time").print_stats()
+    else:
+        run_test()
+        
 if t == 'from_cpp':
     prop = spikeprop.spikeProp(3, 5, 1)
     while x < iterations and prop.failed == False:
@@ -73,7 +115,7 @@ if t == 'from_python':
             input, desired = spikeprop.xor(w)
             error = prop.forward_pass(input, desired)
             total_error += error
-            prop.print_times()
+            #prop.print_times()
             
         print "total_error: %d" % total_error
         
