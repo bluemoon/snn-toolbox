@@ -41,7 +41,7 @@ if options.ng:
         iterations = 5000
         x = 0
         total_error = 10.0
-        while x < iterations and total_error > 2.0 and prop.failed == False:
+        while x < iterations and total_error > 0.01 and prop.failed == False:
             total_error = 0.0
             for w in xrange(4):
                 input, desired = spikeprop.xor(w)
@@ -50,7 +50,7 @@ if options.ng:
                     break
                 
                 total_error += error
-                print "XOR: %d-%d Error: %fms" % (x,w, error)
+                #print "XOR: %d-%d Error: %fms" % (x,w, error)
                 
             print "XOR: %d Total Error: %fms" % (x, total_error)
             x += 1

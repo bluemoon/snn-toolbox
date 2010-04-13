@@ -36,12 +36,12 @@ cdef extern from "stdlib.h" nogil:
     int    c_srand "srand" (int)
     double c_fmod  "fmod" (double, double)
 
-
-@cy.boundscheck(False)
-cdef double link_out(np.ndarray weights, double spike, double time):
-    cdef double *p = <double *>weights.data
-    cdef double weight, output = 0.0
-    cdef int k, i, delay
+IF 0:
+    @cy.boundscheck(False)
+    cdef double link_out(np.ndarray weights, double spike, double time):
+        cdef double *p = <double *>weights.data
+        cdef double weight, output = 0.0
+        cdef int k, i, delay
     ## if time >= (spike + delay)
     ## delay_max = SYNAPSES
     ## the delay is 1...16
@@ -49,13 +49,13 @@ cdef double link_out(np.ndarray weights, double spike, double time):
     ## so i need to find the minimum delay size and
     ## start the loop from there
         
-    i = int(time-spike)
-    for k from 0 <= k < i:
-        delay = k+1
-        weight = p[k]
-        output += (weight * e(time-spike-delay))
+        i = int(time-spike)
+        for k from 0 <= k < i:
+            delay = k+1
+            weight = p[k]
+            output += (weight * e(time-spike-delay))
 
-    return output
+        return output
 
 @cy.profile(False)
 @cy.cdivision(True)
@@ -124,9 +124,29 @@ cdef class spikeprop_faster:
         return self.fail
     failed = property(_fail)
     
+    @cy.boundscheck(False)
+    cdef double link_out(self, np.ndarray weights, double spike, double time):
+        cdef double *p = <double *>weights.data
+        cdef double weight, output = 0.0
+        cdef int k, i, delay
+        ## if time >= (spike + delay)
+        ## delay_max = SYNAPSES
+        ## the delay is 1...16
+        ## if time >= (spike + {1...16})
+        ## so i need to find the minimum delay size and
+        ## start the loop from there
+        
+        i = int(time-spike)
+        for k from 0 <= k < i:
+            delay = k+1
+            weight = p[k]
+            output += (weight * e(time-spike-delay))
 
+        return output
     
-    
+    cdef sub1(self, k):
+        pass
+
     cpdef initialise_weights(self):
         c_srand(self.seed)
         for i from 0 <= i < self.hiddens:
@@ -171,7 +191,7 @@ cdef class spikeprop_faster:
                 for h from 0 <= h < self.inputs:
                     spike_time = in_time[h]
                     if t >= spike_time:
-                        out += link_out(self.hidden_weights[py.PyInt_FromLong(i), py.PyInt_FromLong(h)], spike_time, t)
+                        out += self.link_out(self.hidden_weights[py.PyInt_FromLong(i), py.PyInt_FromLong(h)], spike_time, t)
                     
                 hidden_time[i] = t
                 t += TIME_STEP
@@ -188,7 +208,7 @@ cdef class spikeprop_faster:
                 for i from 0 <= i < self.hiddens:
                     spike_time = hidden_time[i]
                     if t >= spike_time:
-                        ot = link_out(self.output_weights[j,i], spike_time, t)
+                        ot = self.link_out(self.output_weights[j,i], spike_time, t)
                         if (i >= self.hiddens-IPSP):
                             out=out-ot
                         else:
