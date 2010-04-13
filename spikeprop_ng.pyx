@@ -1,13 +1,17 @@
-# cython: profile=True
-# cython: boundscheck=True
+# cython: profile=False
+# cython: boundscheck=False
 # cython: wraparound=False
 # encoding: utf-8
 # filename: spikeprop_ng.pyx
 
+## import multiprocessing as mp
+## CPU_CORES = mp.cpu_cores() 
 import  numpy as np
 cimport numpy as np
 cimport cython as cy
 cimport python as py
+
+
 
 ## Initialise the C-API for numpy
 np.import_array()
@@ -16,8 +20,9 @@ DEF DECAY       = 7
 DEF SYNAPSES    = 16
 DEF IPSP        = 1
 DEF MAX_TIME    = 50
-DEF TIME_STEP   = 0.001
+DEF TIME_STEP   = 0.01
 DEF NEG_WEIGHTS = False
+DEF MP          = True
 
 cdef extern from "math.h" nogil:
     double c_exp "exp" (double)
@@ -32,6 +37,25 @@ cdef extern from "stdlib.h" nogil:
     double c_fmod  "fmod" (double, double)
 
 
+@cy.boundscheck(False)
+cdef double link_out(np.ndarray weights, double spike, double time):
+    cdef double *p = <double *>weights.data
+    cdef double weight, output = 0.0
+    cdef int k, i, delay
+    ## if time >= (spike + delay)
+    ## delay_max = SYNAPSES
+    ## the delay is 1...16
+    ## if time >= (spike + {1...16})
+    ## so i need to find the minimum delay size and
+    ## start the loop from there
+        
+    i = int(time-spike)
+    for k from 0 <= k < i:
+        delay = k+1
+        weight = p[k]
+        output += (weight * e(time-spike-delay))
+
+    return output
 
 @cy.profile(False)
 @cy.cdivision(True)
@@ -84,8 +108,8 @@ cdef class spikeprop_faster:
         
         ## Weight initialisation
         #########################
-        #self.hidden_weights = np.random.rand(self.hiddens, self.inputs, SYNAPSES).astype(np.float64)*10.0
-        #self.output_weights = np.random.rand(self.outputs, self.hiddens, SYNAPSES).astype(np.float64)*10.0
+        self.hidden_weights = np.random.rand(self.hiddens, self.inputs, SYNAPSES).astype(np.float64)*10.0
+        self.output_weights = np.random.rand(self.outputs, self.hiddens, SYNAPSES).astype(np.float64)*10.0
 
         ## Delta vectors
         #################
@@ -101,60 +125,39 @@ cdef class spikeprop_faster:
     failed = property(_fail)
     
 
-    @cy.boundscheck(False)
-    cdef double link_out(self, np.ndarray weights, double spike, double time):
-        cdef double *p = <double *>weights.data
-        cdef double weight, output = 0.0
-        cdef int k, i, delay
-        ## if time >= (spike + delay)
-        ## delay_max = SYNAPSES
-        ## the delay is 1...16
-        ## if time >= (spike + {1...16})
-        ## so i need to find the minimum delay size and
-        ## start the loop from there
-        i = int(time-spike)
-        for k from 0 <= k < i:
-            delay = k+1
-            weight = p[k]
-            output += (weight * e(time-spike-delay))
-
-        return output
+    
     
     cpdef initialise_weights(self):
-        cdef np.ndarray[double, ndim=3] hw = np.zeros((self.hiddens, self.inputs, SYNAPSES))
-        cdef np.ndarray[double, ndim=3] ow = np.zeros((self.outputs, self.hiddens, SYNAPSES))
-        
         c_srand(self.seed)
         for i from 0 <= i < self.hiddens:
             for h from 0 <= h < self.inputs:
                 r = c_fmod(c_rand(), 10.0)
                 for k from 0 <= k < SYNAPSES:
-                    hw[i,h,k] = r+1.0
+                    print i,h,k
+                    self.hidden_weights[i,h,k] = r+1.0
 
         for i in range(self.outputs):
             for h in range(self.hiddens):
                 r = c_fmod(c_rand(), 10.0)
                 for k in range(SYNAPSES):
-                    ow[i,h,k] = r+1.0
+                    self.output_weights[i,h,k] = r+1.0
 
 
-        self.hidden_weights = hw
-        self.output_weights = ow
         
 
     cpdef forward_pass(self, np.ndarray input, np.ndarray desired):
         return self._forward_pass(input, desired)
 
-    @cy.boundscheck(False)
-    cdef _forward_pass(self, np.ndarray[double] in_times, np.ndarray[double] desired_times):
+    cdef _forward_pass(self, np.ndarray in_times, np.ndarray desired_times):
         self.input_time   = in_times
         self.desired_time = desired_times
         cdef double out = 0.0, t = 0.0, spike_time = 0.0
         
-        #cdef double *in_time = <double *>self.input_time.data
-        #cdef double *hidden_time = <double *>self.hidden_time.data
+        cdef double *in_time = <double *>self.input_time.data
+        cdef double *hidden_time = <double *>self.hidden_time.data
+        cdef double *output_time = <double *>self.output_time.data
         
-        cdef double *hw = <double *>self.hidden_weights.data
+        #cdef double *hw = <double *>self.hidden_weights.data
         cdef int i=0, h=0, j=0
         ## for each neuron find spike time
         ## for each hidden neuron
@@ -166,11 +169,11 @@ cdef class spikeprop_faster:
                 out = 0
                 ## for each connection to input
                 for h from 0 <= h < self.inputs:
-                    spike_time = self.input_time[h]
+                    spike_time = in_time[h]
                     if t >= spike_time:
-                        out += self.link_out(self.hidden_weights[py.PyInt_FromLong(i), py.PyInt_FromLong(h)], spike_time, t)
+                        out += link_out(self.hidden_weights[py.PyInt_FromLong(i), py.PyInt_FromLong(h)], spike_time, t)
                     
-                self.hidden_time[i] = t
+                hidden_time[i] = t
                 t += TIME_STEP
 
             if t >= 50.0:
@@ -183,16 +186,16 @@ cdef class spikeprop_faster:
             while (out < self.threshold and t < MAX_TIME):
                 out = 0.0
                 for i from 0 <= i < self.hiddens:
-                    spike_time = self.hidden_time[i]
+                    spike_time = hidden_time[i]
                     if t >= spike_time:
-                        ot = self.link_out(self.output_weights[j,i], spike_time, t)
+                        ot = link_out(self.output_weights[j,i], spike_time, t)
                         if (i >= self.hiddens-IPSP):
                             out=out-ot
                         else:
                             out=out+ot
                 
                 ## End: while
-                self.output_time[j] = t
+                output_time[j] = t
                 t += TIME_STEP
 
             if t >= 50.0:
@@ -201,7 +204,7 @@ cdef class spikeprop_faster:
 
         return self.error()
     
-    cpdef adapt(self, np.ndarray[double] in_times,  np.ndarray[double] desired_times):
+    cpdef adapt(self, np.ndarray in_times,  np.ndarray desired_times):
         self._forward_pass(in_times, desired_times)
         if self.fail:
             return False
