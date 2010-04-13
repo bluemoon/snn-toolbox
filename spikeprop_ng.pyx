@@ -21,7 +21,7 @@ DEF SYNAPSES    = 16
 DEF IPSP        = 1
 DEF MAX_TIME    = 50
 DEF TIME_STEP   = 0.01
-DEF NEG_WEIGHTS = False
+DEF NEG_WEIGHTS = True
 DEF MP          = True
 
 cdef extern from "math.h" nogil:
@@ -85,7 +85,7 @@ cdef class spikeprop_faster:
         self.hiddens = hiddens
         self.outputs = outputs
 
-        self.threshold = 50
+        self.threshold = 75
         ## Messing around with optimization below
         ## i_time = np.PyArray_ZEROS(self.input_time,  inputs,  np.NPY_DOUBLE, 0)
         ## print i_time
@@ -153,7 +153,6 @@ cdef class spikeprop_faster:
             for h from 0 <= h < self.inputs:
                 r = c_fmod(c_rand(), 10.0)
                 for k from 0 <= k < SYNAPSES:
-                    print i,h,k
                     self.hidden_weights[i,h,k] = r+1.0
 
         for i in range(self.outputs):
@@ -171,7 +170,7 @@ cdef class spikeprop_faster:
     cdef _forward_pass(self, np.ndarray in_times, np.ndarray desired_times):
         self.input_time   = in_times
         self.desired_time = desired_times
-        cdef double out = 0.0, t = 0.0, spike_time = 0.0
+        cdef double out = 0.0, time = 0.0, spike_time = 0.0
         
         cdef double *in_time = <double *>self.input_time.data
         cdef double *hidden_time = <double *>self.hidden_time.data
@@ -183,42 +182,42 @@ cdef class spikeprop_faster:
         ## for each hidden neuron
         for i from 0 <= i < self.hiddens:
             ## reset time and output total
-            t   = 0
-            out = 0
-            while (out < self.threshold and t < MAX_TIME):
+            time = 0
+            out  = 0
+            while (out < self.threshold and time < MAX_TIME):
                 out = 0
                 ## for each connection to input
                 for h from 0 <= h < self.inputs:
                     spike_time = in_time[h]
-                    if t >= spike_time:
-                        out += self.link_out(self.hidden_weights[py.PyInt_FromLong(i), py.PyInt_FromLong(h)], spike_time, t)
+                    if time >= spike_time:
+                        out += self.link_out(self.hidden_weights[py.PyInt_FromLong(i), py.PyInt_FromLong(h)], spike_time, time)
                     
-                hidden_time[i] = t
-                t += TIME_STEP
+                hidden_time[i] = time
+                time += TIME_STEP
 
-            if t >= 50.0:
+            if time >= 50.0:
                 self.fail = True
                 break
 
         for j from 0 <= j < self.outputs:
-            out = 0.0
-            t = 0.0
-            while (out < self.threshold and t < MAX_TIME):
+            out  = 0.0
+            time = 0.0
+            while (out < self.threshold and time < MAX_TIME):
                 out = 0.0
                 for i from 0 <= i < self.hiddens:
                     spike_time = hidden_time[i]
-                    if t >= spike_time:
-                        ot = self.link_out(self.output_weights[j,i], spike_time, t)
+                    if time >= spike_time:
+                        ot = self.link_out(self.output_weights[j,i], spike_time, time)
                         if (i >= self.hiddens-IPSP):
                             out=out-ot
                         else:
                             out=out+ot
                 
                 ## End: while
-                output_time[j] = t
-                t += TIME_STEP
+                output_time[j] = time
+                time += TIME_STEP
 
-            if t >= 50.0:
+            if time >= 50.0:
                 self.fail = True
                 break
 
