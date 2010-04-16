@@ -36,6 +36,7 @@ if options.ng:
     from spikeprop_ng import spikeprop_faster
     prop = spikeprop_faster(3, 5, 1)
     prop.initialise_weights()
+    prop.clear_slopes()
     
     def run_test():
         iterations = 5000

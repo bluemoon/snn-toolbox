@@ -25,7 +25,7 @@ DEF MAX_TIME    = 50
 DEF TIME_STEP   = 0.01
 DEF NEG_WEIGHTS = False
 DEF MP          = True
-DEF QUICKPROP   = True
+DEF QUICKPROP   = False
 
 cdef extern from "math.h" nogil:
     double c_exp "exp" (double)
@@ -38,6 +38,8 @@ cdef extern from "stdlib.h" nogil:
     int    c_rand  "rand" ()
     int    c_srand "srand" (int)
     double c_fmod  "fmod" (double, double)
+
+
 
 
 @cy.profile(False)
@@ -53,9 +55,6 @@ cdef double srfd(double time) nogil:
 @cy.boundscheck(False)
 cdef double y(double time, double spike, int delay) nogil:
     return e(time-spike-delay)
-
-
-
 
 cdef class connection:
     cdef public np.ndarray weight
@@ -146,7 +145,7 @@ cdef class spikeprop_faster:
         #########################
         self.hidden_weights = np.random.rand(self.hiddens, self.inputs, SYNAPSES).astype(np.float64)*10.0
         self.output_weights = np.random.rand(self.outputs, self.hiddens, SYNAPSES).astype(np.float64)*10.0
-
+        
         ## Delta vectors
         #################
         self.delta_J = np.ndarray(self.outputs)
@@ -165,6 +164,14 @@ cdef class spikeprop_faster:
         return self.fail
     failed = property(_fail)
     
+    cdef weight_minmax(self, inputs):
+        t_min = 0.1
+        t_max = 10
+        return self._weight_minmax(inputs, t_min), self._weight_minmax(inputs, t_max)
+    
+    cdef _weight_minmax(self, inputs, time):
+        return (DECAY*self.threshold)/(SYNAPSES*inputs*time)*c_exp((time/DECAY)-1.0)
+        
     @cy.boundscheck(False)
     cdef double link_out(self, np.ndarray weights, double spike, double time):
         cdef double *p = <double *>weights.data
@@ -185,8 +192,6 @@ cdef class spikeprop_faster:
 
         return output
     
-    cdef sub1(self, k):
-        pass
 
     cpdef initialise_weights(self):
         cdef int i,h,k
@@ -271,17 +276,12 @@ cdef class spikeprop_faster:
 
         return self.error()
     
-    cdef backwards_pass(self, np.ndarray in_times, np.ndarray desired_times):
-        self._forward_pass(in_times, desired_times)
+    cpdef clear_slopes(self):
+        decay = -0.001
+        self.o_derive = decay * self.output_weights
+        self.h_derive = decay * self.hidden_weights 
         
-        ## if we go past the time for a given neuron
-        ## do no finish
-        if self.fail:
-            return False
-        
-        for j from 0 <= j < self.outputs:
-            self.delta_J[j] = self._e12(j)
-        
+    
     cpdef adapt(self, np.ndarray in_times,  np.ndarray desired_times):
         self._forward_pass(in_times, desired_times)
         if self.fail:
@@ -306,13 +306,7 @@ cdef class spikeprop_faster:
                 for k from 0 <= k < SYNAPSES:
                     delay = k+1
                     old_weight = self.output_weights[j,i,k]
-                    if i >= self.hiddens-IPSP:
-                        change_weight = -self.change(actual_time_j, spike_time, delay, delta)
-                    else:
-                        change_weight = self.change(actual_time_j, spike_time, delay, delta)
                     
-                    
-                    new_weight = old_weight + change_weight
                     IF QUICKPROP:
                         ## for quickprop the math is
                         ## pde E
@@ -320,16 +314,19 @@ cdef class spikeprop_faster:
                         ## pde w
                         E_double_prime = self.o_derive[j,i,k]
                         E_prime = self.error_weight_derivative(actual_time_j, spike_time, delay, delta)
-                        if E_double_prime > 0:
-                            new_weight = (E_prime/(E_double_prime-E_prime)) * self.o_delta[j,i,k]
-                            self.o_delta[j,i,k] = new_weight
-                        else:
-                            self.o_delta[j,i,k] = change_weight
-
+                        change_weight = (E_prime/(E_double_prime-E_prime)) * self.o_delta[j,i,k] #* self.learning_rate
+                        
+                        self.o_delta[j,i,k] = new_weight
                         self.o_derive[j,i,k] = E_prime
                         
+                    ELSE:
+                        if i >= self.hiddens-IPSP:
+                            change_weight = -self.change(actual_time_j, spike_time, delay, delta)
+                        else:
+                            change_weight = self.change(actual_time_j, spike_time, delay, delta)
+                            
                         #new_weight = old_weight / (self.o_weight_last[j,i,k]-old_weight)
-                        
+                    new_weight = old_weight + change_weight                        
                     #if self.allow_negative_weights:
                     IF NEG_WEIGHTS:
                         self.output_weights[j,i,k] = new_weight
@@ -347,10 +344,17 @@ cdef class spikeprop_faster:
                 for k from 0 <= k < SYNAPSES:
                     delay=k+1
                     old_weight=self.hidden_weights[i,h,k]
-                    if i >= self.hiddens-IPSP:
-                        change_weight = -self.change(actual_time_i, spike_time, delay, delta)
-                    else:
-                        change_weight = self.change(actual_time_i, spike_time, delay, delta)
+                    IF QUICKPROP:
+                        E_double_prime = self.h_derive[i,h,k]
+                        E_prime = self.error_weight_derivative(actual_time_i, spike_time, delay, delta)
+                        change_weight = (E_prime/(E_double_prime-E_prime)) * self.h_delta[i,h,k] 
+                        self.h_delta[i,h,k]  = new_weight
+                        self.h_derive[i,h,k] = E_prime
+                    ELSE:
+                        if i >= self.hiddens-IPSP:
+                            change_weight = -self.change(actual_time_i, spike_time, delay, delta)
+                        else:
+                            change_weight = self.change(actual_time_i, spike_time, delay, delta)
 
                     new_weight = old_weight + change_weight
                     #IF QUICKPROP:
