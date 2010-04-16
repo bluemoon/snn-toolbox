@@ -30,7 +30,7 @@ DEF DECAY       = 7
 DEF SYNAPSES    = 16
 DEF IPSP        = 1
 DEF MAX_TIME    = 50
-DEF TIME_STEP   = 0.1
+DEF TIME_STEP   = 0.5
 DEF NEG_WEIGHTS = False
 DEF MP          = True
 
@@ -79,7 +79,7 @@ cdef class spikeprop_faster:
     cdef np.ndarray hidden_time, output_time, desired_time, input_time
     cdef np.ndarray hidden_weights, output_weights
     cdef np.ndarray delta_J, delta_I
-    cdef np.ndarray h_derive, o_derive, h_delta, o_delta
+    cdef public np.ndarray h_derive, o_derive, h_delta, o_delta
     #cdef np.ndarray h_learn_rates, o_learn_rates
     
     cdef int with_ipsp
@@ -113,10 +113,10 @@ cdef class spikeprop_faster:
         self.delta_J = np.ndarray(self.outputs)
         self.delta_I = np.ndarray(self.hiddens)
         
-        self.o_derive = np.ones((self.outputs, self.hiddens, SYNAPSES))
-        self.h_derive = np.ones((self.hiddens, self.inputs, SYNAPSES))
-        self.o_delta = np.zeros((self.outputs, self.hiddens, SYNAPSES))
-        self.h_delta = np.zeros((self.hiddens, self.inputs, SYNAPSES))
+        self.o_derive = np.zeros((self.outputs, self.hiddens, SYNAPSES))
+        self.h_derive = np.zeros((self.hiddens, self.inputs, SYNAPSES))
+        self.o_delta = np.ones((self.outputs, self.hiddens, SYNAPSES))
+        self.h_delta = np.ones((self.hiddens, self.inputs, SYNAPSES))
         
         ## Learning rate
         #################
@@ -263,9 +263,9 @@ cdef class spikeprop_faster:
     
     cpdef clear_slopes(self):
         decay = -0.001
-        IF QUICKPROP:
-            self.o_derive = decay * self.output_weights
-            self.h_derive = decay * self.hidden_weights 
+        #IF QUICKPROP:
+        #    self.o_derive = decay * self.output_weights
+        #    self.h_derive = decay * self.hidden_weights 
 
         
     
@@ -303,10 +303,14 @@ cdef class spikeprop_faster:
                         ## pde w
                         E_double_prime = self.o_derive[j,i,k]
                         E_prime = self.error_weight_derivative(actual_time_j, spike_time, delay, delta)
-                        change_weight = (E_prime/(E_double_prime-E_prime)) * self.o_delta[j,i,k] #* self.learning_rate
+                        if E_double_prime == 0:
+                            change_weight = -self.learning_rate * (E_prime)
+                        else:
+                            change_weight = 0.35 * (E_prime/(E_double_prime-E_prime)) * self.o_delta[j,i,k] * 2.0
+                            
                         new_weight = old_weight + change_weight
                         self.output_weights[j,i,k] = new_weight
-                        self.o_delta[j,i,k] = new_weight
+                        self.o_delta[j,i,k] = change_weight
                         self.o_derive[j,i,k] = E_prime
                         
                     ELIF RPROP:
@@ -356,10 +360,14 @@ cdef class spikeprop_faster:
                     IF QUICKPROP:
                         E_double_prime = self.h_derive[i,h,k]
                         E_prime = self.error_weight_derivative(actual_time_i, spike_time, delay, delta)
-                        change_weight = (E_prime/(E_double_prime-E_prime)) * self.h_delta[i,h,k] 
-                        self.h_delta[i,h,k]  = new_weight
-                        self.h_derive[i,h,k] = E_prime
+                        if E_double_prime == 0:
+                            change_weight = -self.learning_rate * (E_prime)
+                        else:
+                            change_weight = 0.35 * (E_prime/(E_double_prime-E_prime)) * self.h_delta[i,h,k]*2.0 
+
                         new_weight = old_weight + change_weight
+                        self.h_delta[i,h,k]  = change_weight
+                        self.h_derive[i,h,k] = E_prime
                         self.hidden_weights[i,h,k] = new_weight#new_weight
 
                     ELIF RPROP:

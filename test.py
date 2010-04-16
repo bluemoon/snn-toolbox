@@ -1,9 +1,11 @@
 from optparse import OptionParser
+import mpl_toolkits.mplot3d.axes3d as p3
 import spikeprop
 import pstats
 import cProfile
 import numpy as np
 import profile
+import pylab
 
 parser = OptionParser()
 parser.add_option("-d", "--debug", dest="debug", action="store_true")
@@ -37,6 +39,8 @@ if options.ng:
     prop = spikeprop_faster(3, 5, 1)
     prop.initialise_weights()
     prop.clear_slopes()
+
+    fig = pylab.figure()
     
     def run_test():
         iterations = 5000
@@ -49,9 +53,16 @@ if options.ng:
                 error = prop.adapt(input, desired) 
                 if error == False:
                     break
-                
+
                 total_error += error
                 #print "XOR: %d-%d Error: %fms" % (x,w, error)
+                
+                #ax = p3.Axes3D(fig)
+                #ax.plot_wireframe(prop.o_derive)
+                #ax.set_xlabel('X')
+                #ax.set_ylabel('Y')
+                #ax.set_zlabel('Z')
+                #p.show()
                 
             print "XOR: %d Total Error: %fms" % (x, total_error)
             x += 1
@@ -119,7 +130,7 @@ else:
             #prop.print_times()
             
             print "total_error: %d" % total_error
-        
+            
         if options.debug:
             cProfile.run("run_test()","Profile.prof")
             s = pstats.Stats("Profile.prof")
