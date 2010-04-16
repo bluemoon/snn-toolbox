@@ -119,7 +119,7 @@ cdef class spikeprop_faster:
     cdef np.ndarray hidden_weights, output_weights
     cdef np.ndarray delta_J, delta_I
     cdef np.ndarray h_derive, o_derive, h_delta, o_delta
-    cdef np.ndarray h_learn_rates, o_learn_rates
+    #cdef np.ndarray h_learn_rates, o_learn_rates
     
     cdef int with_ipsp
 
@@ -321,8 +321,8 @@ cdef class spikeprop_faster:
                         E_double_prime = self.o_derive[j,i,k]
                         E_prime = self.error_weight_derivative(actual_time_j, spike_time, delay, delta)
                         if E_double_prime > 0:
-                            delta = (E_prime/(E_double_prime-E_prime)) * self.o_delta[j,i,k]
-                            self.o_delta[j,i,k] = delta
+                            new_weight = (E_prime/(E_double_prime-E_prime)) * self.o_delta[j,i,k]
+                            self.o_delta[j,i,k] = new_weight
                         else:
                             self.o_delta[j,i,k] = change_weight
 
