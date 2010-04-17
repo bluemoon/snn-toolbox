@@ -49,17 +49,6 @@ cdef double srfd(double time) nogil:
 cdef double y(double time, double spike, int delay) nogil:
     return e(time-spike-delay)
 
-IF 0:
-    class spikeprop_time:
-        def sigmoid(self, time):
-            return (1.0/1.0+c_exp(-DECAY*time))
-        def sigmoid_prime(self, time):
-            return (DECAY*self.sigmoid(time)*(1.0-self.sigmoid(time)))
-        def xi(self, j, time):
-            pass
-        def espilon(self):
-            pass
-
 class spikeprop_smooth:
     def sigmoid(self, time):
         return (1.0/1.0+c_exp(-DECAY*time))
@@ -89,7 +78,7 @@ cdef class spikeprop_faster:
         self.hiddens = hiddens
         self.outputs = outputs
 
-        self.threshold = 40
+        self.threshold = 50
         
         ## Time Vectors
         ################
@@ -142,13 +131,13 @@ cdef class spikeprop_faster:
         return self.fail
     failed = property(_fail)
     
-    cdef weight_minmax(self, inputs):
-        t_min = 0.1
-        t_max = 10
-        return self._weight_minmax(inputs, t_min), self._weight_minmax(inputs, t_max)
-    
-    cdef _weight_minmax(self, inputs, time):
-        return (DECAY*self.threshold)/(SYNAPSES*inputs*time)*c_exp((time/DECAY)-1.0)
+    #cdef weight_minmax(self, inputs):
+    #    t_min = 0.1
+    #    t_max = 10
+    #    return self._weight_minmax(inputs, t_min), self._weight_minmax(inputs, t_max)
+   # 
+   # cdef _weight_minmax(self, inputs, time):
+    #    return (DECAY*self.threshold)/(SYNAPSES*inputs*time)*c_exp((time/DECAY)-1.0)
         
     @cy.boundscheck(False)
     cdef double link_out(self, np.ndarray weights, double spike, double time):
