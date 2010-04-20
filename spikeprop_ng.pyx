@@ -10,9 +10,9 @@
 import os
 
 from spikeprop cimport *
-import  numpy as np
+import  numpy  as np
 import cPickle as cp
-cimport numpy as np
+cimport numpy  as np
 cimport cython as cy
 cimport python as py
 
@@ -49,19 +49,73 @@ cdef double srfd(double time) nogil:
 cdef double y(double time, double spike, int delay) nogil:
     return e(time-spike-delay)
 
-class spikeprop_smooth:
-    def sigmoid(self, time):
-        return (1.0/1.0+c_exp(-DECAY*time))
-    def sigmoid_prime(self, time):
-        return (DECAY*self.sigmoid(time)*(1.0-self.sigmoid(time)))
-    def xi(self, j, time):
-        pass
-    def espilon(self):
-        pass
+class neurons:
+    def __init__(self, neurons):
+        self.time = np.ndarray((neurons))
+        self.desired = np.ndarray((neurons))
+    
+class layer:
+    def __init__(self, in_neurons, out_neurons):
+        self.ins  = in_neurons
+        self.outs = out_neurons
+        self.weights = np.random.rand(self.ins, self.outs) * 10.0
+        self.delays  = np.random.rand(self.ins, self.outs)
+        self.deltas  = np.random.rand(self.ins, self.outs)
+        self.In  = neurons(self.ins)
+        self.Out = neurons(self.outs)
         
 
+cdef class spikeprop_mod:
+    def __init__(self, layers):
+        self.layers    = layers
+        self.threshold = 50
+
+    cpdef forward_pass(self, np.ndarray input, np.ndarray desired):
+        ## for overhead of python passing
+        return self._forward_pass(input, desired)
+
+    cdef _forward_pass(self, np.ndarray in_times, np.ndarray desired_times):
+        ## the c-specific one incurs less overhead than the python
+        ## specific one
+        self.layers[0].In.time    = in_times
+        self.layers[0].In.desired = desired_times
+        total = 0
+        for layer_idx from 0 <= layer_idx < len(self.layers):
+            self.layer = self.layers[layer_idx]
+            if layer_idx == 0:
+                for i from 0 <= i < self.layer.outs:
+                    total = 0
+                    time  = 0
+                    while (total < self.threshold and time < MAX_TIME):
+                        for h from 0 <= h < self.layers.ins:
+                            spike_time = in_times[h]
+                            if time >= spike_time:
+                                total += self.link_out(self.layer.weights[i,h], spike_time, time)        
+                        self.layer.Out.time[i] = time
+                        time += TIME_STEP
+                    if time >= 50.0:
+                        self.fail = True
+                        
+            if layer_idx > 0:
+                for i from 0 <= i < self.layer.outs:
+                    total = 0
+                    time  = 0
+                    while (total < self.threshold and time < MAX_TIME):
+                        for h from 0 <= h < self.layers.ins:
+                            spike_time = in_times[h]
+                            if time >= spike_time:
+                                ot = self.link_out(self.layer.weights[i,h], spike_time, time)
+                                if (i >= self.hiddens-IPSP):
+                                    total=total-ot
+                                else:
+                                    total=total+ot
+                        self.layer.Out.time[i] = time
+                        time += TIME_STEP
+                    if time >= 50.0:
+                        self.fail = True
+
 cdef class spikeprop_faster:
-    cdef int seed, inputs, hiddens, outputs,
+    cdef int seed, inputs, hiddens, outputs
     cdef int threshold
     cdef bint fail
     cdef double learning_rate
