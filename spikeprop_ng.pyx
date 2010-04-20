@@ -58,7 +58,7 @@ class layer:
     def __init__(self, in_neurons, out_neurons):
         self.ins  = in_neurons
         self.outs = out_neurons
-        self.weights = np.random.rand(self.ins, self.outs) * 10.0
+        self.weights = np.random.rand(self.ins, self.outs, SYNAPSES) * 10.0
         self.delays  = np.random.rand(self.ins, self.outs)
         self.deltas  = np.random.rand(self.ins, self.outs)
         self.In  = neurons(self.ins)
@@ -69,7 +69,37 @@ cdef class spikeprop_mod:
     def __init__(self, layers):
         self.layers    = layers
         self.threshold = 50
+        
+    cpdef backwards_pass(self, np.ndarray input, np.ndarray desired):
+        self._forwards_pass(input, desired)
+        for layer_idx from 0 <= layer_idx < len(self.layers):
+            self.layer = self.layers[layer_idx]
+            for j from 0 <= j < self.layer.outs:
+                actual_time = self.layer.Outs.time[j]
+                for i from 0 <= i < self.layers.ins:
+                    for k from 0 <= k < SYNAPSES:
+                        delta = 0
+                        delay = k+1
 
+                        spike_time = self.layer.In.time[i]
+                        old_weight = self.layer.weights[j,i,k]
+                        
+                        if i >= self.hiddens-IPSP:
+                            change_weight = -self.change(actual_time, spike_time, delay, delta)
+                        else:
+                            change_weight = self.change(actual_time, spike_time, delay, delta)
+
+                        new_weight = old_weight + change_weight
+                            
+                        IF NEG_WEIGHTS:
+                            self.layer.weights[j,i,k] = new_weight
+                        ELSE:
+                            if new_weight >= 0.0:
+                                self.layer.weights[j,i,k] = new_weight#new_weight
+                            else:
+                                self.layer.weights[j,i,k] = 0.0
+                            
+                    
     cpdef forward_pass(self, np.ndarray input, np.ndarray desired):
         ## for overhead of python passing
         return self._forward_pass(input, desired)
