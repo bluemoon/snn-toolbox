@@ -54,13 +54,14 @@ def run_modular():
     while x < iterations and Total_error > 0.5 and prop.failed == False:
         for w in xrange(4):
             input, desired = spikeprop.xor(w)
-            error = prop.backwards_pass(input, desired) 
+            error = prop.backwards_pass(input, desired)
+            print error
             if error == False:
                 break
 
-            total_error += error
+            Total_error += error
             
-        print "XOR: %d Total Error: %fms" % (x, total_error)
+        print "XOR: %d Total Error: %fms" % (x, Total_error)
         x += 1
             
 

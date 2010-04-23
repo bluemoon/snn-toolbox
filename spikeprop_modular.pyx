@@ -87,9 +87,12 @@ cdef link_out_d(self, np.ndarray weights, double spike_time, double time):
                 ## else no charge
 
 
-class neurons:
+cdef class neurons:
+    cdef public np.ndarray time
+    cdef public np.ndarray desired
+    
     def __init__(self, neurons):
-        self.time = np.ndarray((neurons))
+        self.time    = np.ndarray((neurons))
         self.desired = np.ndarray((neurons))
     
 class layer:
@@ -101,6 +104,7 @@ class layer:
         self.deltas  = np.random.rand(self.ins, self.outs)
         self.In  = neurons(self.ins)
         self.Out = neurons(self.outs)
+        self.learning_rate = 1.0
         
 
 cdef class modular:
@@ -108,6 +112,7 @@ cdef class modular:
     cdef object layer
     cdef int threshold
     cdef public bint failed
+    cdef np.ndarray desired_time
     
     def __init__(self, layers):
         self.layers    = layers
@@ -116,18 +121,26 @@ cdef class modular:
         self.layer = None
     
     cpdef backwards_pass(self, np.ndarray input, np.ndarray desired):
+        self.desired_time = desired
         self._forward_pass(input, desired)
         for layer_idx from 0 <= layer_idx < len(self.layers):
             self.layer = self.layers[layer_idx]
+            for i from 0 <= i < self.layer.outs:
+                if layer_idx < len(self.layers):
+                    self.layer.deltas[i] = self.equation_17(i)
+                elif layer_idx == len(self.layers):
+                    self.layer.deltas[i] = self.equation_12(i)
+                    
+                
             for j from 0 <= j < self.layer.outs:
                 actual_time = self.layer.Out.time[j]
                 for i from 0 <= i < self.layer.ins:
                     for k from 0 <= k < SYNAPSES:
-                        delta = 0
+                        delta = self.layer.deltas[j]
                         delay = k+1
 
                         spike_time = self.layer.In.time[i]
-                        old_weight = self.layer.weights[j,i,k]
+                        old_weight = self.layer.weights[i,j,k]
                         
                         if i >= self.layer.outs-IPSP:
                             change_weight = -self.change(actual_time, spike_time, delay, delta)
@@ -137,13 +150,13 @@ cdef class modular:
                         new_weight = old_weight + change_weight
                             
                         IF NEG_WEIGHTS:
-                            self.layer.weights[j,i,k] = new_weight
+                            self.layer.weights[i,j,k] = new_weight
                         ELSE:
                             if new_weight >= 0.0:
-                                self.layer.weights[j,i,k] = new_weight#new_weight
+                                self.layer.weights[i,j,k] = new_weight#new_weight
                             else:
-                                self.layer.weights[j,i,k] = 0.0
-                            
+                                self.layer.weights[i,j,k] = 0.0
+        return self.error()
                     
     cpdef forward_pass(self, np.ndarray input, np.ndarray desired):
         ## for overhead of python passing
@@ -152,8 +165,9 @@ cdef class modular:
     cdef _forward_pass(self, np.ndarray in_times, np.ndarray desired_times):
         ## the c-specific one incurs less overhead than the python
         ## specific one
-        self.layers[0].In.time    = in_times
-        self.layers[0].In.desired = desired_times
+        self.layers[0].In.time      = in_times
+        self.layers[-1].Out.desired = desired_times
+        
         total = 0
         for layer_idx from 0 <= layer_idx < len(self.layers):
             self.layer = self.layers[layer_idx]
@@ -188,11 +202,14 @@ cdef class modular:
                                     
                         self.layer.Out.time[i] = time
                         time += TIME_STEP
+                        
                     if time >= 50.0:
                         self.failed = True
-            return y(actual_time, spike_time, delay) * delta
+                        
+
+        
     
-    cdef _e12(self, j):
+    cdef equation_12(self, j):
         return (self.desired_time[j]-self.output_time[j])/(self._e12bottom(j))
 
     cdef _e12bottom(self, j):
@@ -207,25 +224,23 @@ cdef class modular:
 
         return ot
  
-    cdef _e17top(self, i, delta_j):
-        #cdef double ot = 0.0
-        #cdef double actual = 0.0
+    cdef equation_17_top(self, i, delta_j):
         ot = 0.0
         actual = 0.0
-        spike_time = self.hidden_time[i]
-        for j in range(self.outputs):
-            actual_time_j = self.output_time[j]
+        
+        spike_time = self.layer.Out.time[i]
+        for j in range(self.layers[-1].outs):
+            actual_time_j = self.layers[-1].Out.time[j]
             dj = delta_j[j]
-            if i >= (self.hiddens-IPSP):
-                ot = -self.link_out_d(self.output_weights[j,i], spike_time, actual_time_j)
+            if i >= (self.layer.outs-IPSP):
+                ot = -self.link_out_d(self.layer.weights[j,i], spike_time, actual_time_j)
             else:
-                ot = self.link_out_d(self.output_weights[j,i], spike_time, actual_time_j)
+                ot = self.link_out_d(self.layer.weights[j,i], spike_time, actual_time_j)
             actual = actual + (dj*ot)
 
         return actual
     
-    cdef _e17bottom(self, i):
-        ## 100%
+    cdef equation_17_bottom(self, i):
         cdef double actual = 0.0
         cdef double ot, actual_time = 0.0
         actual_time = self.hidden_time[i]
@@ -240,17 +255,15 @@ cdef class modular:
         else:
             return actual
 
-    cdef _e17(self, i):
-        ## 100%
-        actual = self._e17top(i, self.delta_J)/self._e17bottom(i)
+    cdef equation_17(self, i):
+        actual = self.equation_17_top(i, self.layer.deltas[i])/self.equation_17_bottom(i)
         return actual
             
 
     cdef change(self, actual_time, spike_time, delay, delta):
-        return (-self.learning_rate * y(actual_time, spike_time, delay) * delta)
+        return (-self.layer.learning_rate * y(actual_time, spike_time, delay) * delta)
 
     cdef link_out_d(self, np.ndarray weights, double spike_time, double time):
-        ## 100%
         cdef double output = 0.0
         cdef int delay
         cdef Py_ssize_t k
@@ -269,9 +282,10 @@ cdef class modular:
         ## else none will fire
         return output
 
-    cpdef error(self):
+    cdef error(self):
+        last_layer = self.layers[-1]
         total = 0.0
-        for j in range(self.outputs):
-            total += ((self.output_time[j]-self.desired_time[j]) ** 2.0)
+        for j in range(last_layer.outs):
+            total += ((last_layer.Out.time[j]-last_layer.Out.desired[j]) ** 2.0)
             
         return (total/2.0)
