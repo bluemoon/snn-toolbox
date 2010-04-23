@@ -7,8 +7,8 @@ includes = [
     '/usr/local/lib/python2.6/dist-packages/numpy/core/include/',
     ]
 
-spikeprop = Extension("spikeprop",
-                      ["spikeProp.pyx","spike_prop_.c"],
+spikeprop = Extension("spikeprop_modular",
+                      ["spikeprop_modular.pyx","spike_prop_.c"],
                       include_dirs=includes,
                       #libraries=['profiler'],
                       )

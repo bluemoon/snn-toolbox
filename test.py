@@ -1,11 +1,12 @@
 from optparse import OptionParser
-import mpl_toolkits.mplot3d.axes3d as p3
+import matplotlib.pyplot as plt
 import spikeprop
 import pstats
 import cProfile
 import numpy as np
 import profile
 import pylab
+
 
 parser = OptionParser()
 parser.add_option("-d", "--debug", dest="debug", action="store_true")
@@ -34,108 +35,78 @@ def xor(which):
 
 t = 'from_python'
 
-if options.ng:
-    from spikeprop_ng import spikeprop_faster
-    prop = spikeprop_faster(3, 5, 1)
-    prop.initialise_weights()
-    prop.clear_slopes()
+from spikeprop_ng import *
+from spikeprop_modular import *
 
-    fig = pylab.figure()
+prop = spikeprop_faster(3, 5, 1)
+prop.initialise_weights()
+prop.clear_slopes()
+
+
+def run_modular():
+    In = layer(3,5)
+    Out = layer(5,1)
+    prop = modular([In, Out])
     
-    def run_test():
-        iterations = 5000
-        x = 0
-        total_error = 10.0
-        while x < iterations and total_error > 0.5 and prop.failed == False:
-            total_error = 0.0
-            for w in xrange(4):
-                input, desired = spikeprop.xor(w)
-                error = prop.adapt(input, desired) 
-                if error == False:
-                    break
-
-                total_error += error
-                #print "XOR: %d-%d Error: %fms" % (x,w, error)
-                
-                #ax = p3.Axes3D(fig)
-                #ax.plot_wireframe(prop.o_derive)
-                #ax.set_xlabel('X')
-                #ax.set_ylabel('Y')
-                #ax.set_zlabel('Z')
-                #p.show()
-                
-            print "XOR: %d Total Error: %fms" % (x, total_error)
-            x += 1
-            
-        if prop.failed == True:
-            print "!!! Failed !!!"
-            return
-        
+    iterations = 5000
+    x = 0
+    Total_error = 10
+    while x < iterations and Total_error > 0.5 and prop.failed == False:
         for w in xrange(4):
             input, desired = spikeprop.xor(w)
-            error = prop.forward_pass(input, desired)
-            total_error += error
-            #prop.print_times()
-            
-        print "total_error: %d" % total_error
-        
-    if options.debug:
-        cProfile.run("run_test()","Profile.prof")
-        s = pstats.Stats("Profile.prof")
-        s.strip_dirs().sort_stats("time").print_stats()
-    else:
-        run_test()
-else:        
-    if t == 'from_cpp':
-        prop = spikeprop.spikeProp(3, 5, 1)
-        while x < iterations and prop.failed == False:
-            for w in xrange(4):
-                input, desired = xor(w)
-                error = prop.adapt(input, desired)
-                print error
-                x+=1
+            error = prop.backwards_pass(input, desired) 
+            if error == False:
+                break
 
-    if t == 'from_python':
-        prop = spikeprop.spikeprop_base(3, 5, 1, 4, learning_rate=1.0, threshold=50)
-        prop.init_1()
-        #input, desired = spikeprop.xor(1)
-        #prop.train(input, desired)
-        #error = prop.backwards_pass(input, desired) 
-        def run_test():
-            iterations = 5000
-            x = 0
-            total_error = 10.0
-            while x < iterations and total_error > 2.0 and prop.failed == False:
-                total_error = 0.0
-                for w in xrange(4):
-                    input, desired = spikeprop.xor(w)
-                    error = prop.adapt(input, desired) 
-                    if error == False:
-                        break
-                
-                    total_error += error
-                    print "XOR: %d-%d Error: %fms" % (x,w, error)
-                
-                print "XOR: %d Total Error: %fms" % (x, total_error)
-                x += 1
+            total_error += error
             
-            if prop.failed == True:
-                print "!!! Failed !!!"
-                return
-        
-            for w in xrange(4):
-                input, desired = spikeprop.xor(w)
-                error = prop.forward_pass(input, desired)
-                total_error += error
-            #prop.print_times()
+        print "XOR: %d Total Error: %fms" % (x, total_error)
+        x += 1
             
-            print "total_error: %d" % total_error
+
+    
+def run_test(threshold):
+    iterations = 5000
+    x = 0
+    total_error = 10.0
+    errors = []
+    prop.threshold = threshold
+    while x < iterations and total_error > 0.5 and prop.failed == False:
+        total_error = 0.0
+        error_per = 0.0
+        for w in xrange(4):
+            input, desired = spikeprop.xor(w)
+            error = prop.adapt(input, desired) 
+            if error == False:
+                break
+            error_per += error
+            total_error += error
             
-        if options.debug:
-            cProfile.run("run_test()","Profile.prof")
-            s = pstats.Stats("Profile.prof")
-            s.strip_dirs().sort_stats("time").print_stats()
-        else:
-            run_test()
+        errors.append(error_per/4.0)
+        error_per = 0
+
+            
+        print "XOR: %d Total Error: %fms" % (x, total_error)
+        x += 1
+            
+    if prop.failed == True:
+        print "!!! Failed !!!"
+        return
+    return errors
+
+
+            
+if options.debug:
+    cProfile.run("run_test()","Profile.prof")
+    s = pstats.Stats("Profile.prof")
+    s.strip_dirs().sort_stats("time").print_stats()
+else:
+    #sets = []
+    #for threshold in xrange(20,50):
+    #    plt.plot(run_test(threshold))
+    #    plt.show()
+    #run_test(50)   
+
+    run_modular()
 
 

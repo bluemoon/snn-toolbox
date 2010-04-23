@@ -9,7 +9,8 @@
 ## CPU_CORES = mp.cpu_cores() 
 import os
 
-from spikeprop cimport *
+from spikeprop  cimport *
+
 import  numpy  as np
 import cPickle as cp
 cimport numpy  as np
@@ -30,14 +31,27 @@ DEF DECAY       = 7
 DEF SYNAPSES    = 16
 DEF IPSP        = 1
 DEF MAX_TIME    = 50
-DEF TIME_STEP   = 0.5
+DEF TIME_STEP   = 0.1
 DEF NEG_WEIGHTS = False
 DEF MP          = True
 
 DEF QUICKPROP   = False
 DEF RPROP       = False
 
+class Inputter:
+    def __init__(self, data, type):
+        self.data = data
+        self.type = type
 
+
+cdef int sign(num):
+    if num < 0:
+        return -1
+    elif num > 0:
+        return 1
+    else:
+        return 0
+    
 @cy.cdivision(True)
 cdef double srfd(double time) nogil:
     cdef double asrfd = 0
@@ -49,104 +63,48 @@ cdef double srfd(double time) nogil:
 cdef double y(double time, double spike, int delay) nogil:
     return e(time-spike-delay)
 
-class neurons:
-    def __init__(self, neurons):
-        self.time = np.ndarray((neurons))
-        self.desired = np.ndarray((neurons))
-    
-class layer:
-    def __init__(self, in_neurons, out_neurons):
-        self.ins  = in_neurons
-        self.outs = out_neurons
-        self.weights = np.random.rand(self.ins, self.outs, SYNAPSES) * 10.0
-        self.delays  = np.random.rand(self.ins, self.outs)
-        self.deltas  = np.random.rand(self.ins, self.outs)
-        self.In  = neurons(self.ins)
-        self.Out = neurons(self.outs)
-        
+@cy.boundscheck(False)
+cdef double link_out(self, np.ndarray weights, double spike, double time):
+    cdef double *p = <double *>weights.data
+    cdef double weight, output = 0.0
+    cdef int k, i, delay
+    ## if time >= (spike + delay)
+    ## delay_max = SYNAPSES
+    ## the delay is 1...16
+    ## if time >= (spike + {1...16})
+    ## so i need to find the minimum delay size and
+    ## start the loop from there
 
-cdef class spikeprop_mod:
-    def __init__(self, layers):
-        self.layers    = layers
-        self.threshold = 50
-        
-    cpdef backwards_pass(self, np.ndarray input, np.ndarray desired):
-        self._forwards_pass(input, desired)
-        for layer_idx from 0 <= layer_idx < len(self.layers):
-            self.layer = self.layers[layer_idx]
-            for j from 0 <= j < self.layer.outs:
-                actual_time = self.layer.Outs.time[j]
-                for i from 0 <= i < self.layers.ins:
-                    for k from 0 <= k < SYNAPSES:
-                        delta = 0
-                        delay = k+1
+    i = int(time-spike)
+    for k from 0 <= k < i:
+        delay = k+1
+        weight = p[k]
+        output += (weight * e(time-spike-delay))
 
-                        spike_time = self.layer.In.time[i]
-                        old_weight = self.layer.weights[j,i,k]
-                        
-                        if i >= self.hiddens-IPSP:
-                            change_weight = -self.change(actual_time, spike_time, delay, delta)
-                        else:
-                            change_weight = self.change(actual_time, spike_time, delay, delta)
+    return output
 
-                        new_weight = old_weight + change_weight
-                            
-                        IF NEG_WEIGHTS:
-                            self.layer.weights[j,i,k] = new_weight
-                        ELSE:
-                            if new_weight >= 0.0:
-                                self.layer.weights[j,i,k] = new_weight#new_weight
-                            else:
-                                self.layer.weights[j,i,k] = 0.0
-                            
-                    
-    cpdef forward_pass(self, np.ndarray input, np.ndarray desired):
-        ## for overhead of python passing
-        return self._forward_pass(input, desired)
+cdef link_out_d(self, np.ndarray weights, double spike_time, double time):
+    ## 100%
+    cdef double output = 0.0
+    cdef int delay
+    cdef Py_ssize_t k
 
-    cdef _forward_pass(self, np.ndarray in_times, np.ndarray desired_times):
-        ## the c-specific one incurs less overhead than the python
-        ## specific one
-        self.layers[0].In.time    = in_times
-        self.layers[0].In.desired = desired_times
-        total = 0
-        for layer_idx from 0 <= layer_idx < len(self.layers):
-            self.layer = self.layers[layer_idx]
-            if layer_idx == 0:
-                for i from 0 <= i < self.layer.outs:
-                    total = 0
-                    time  = 0
-                    while (total < self.threshold and time < MAX_TIME):
-                        for h from 0 <= h < self.layers.ins:
-                            spike_time = in_times[h]
-                            if time >= spike_time:
-                                total += self.link_out(self.layer.weights[i,h], spike_time, time)        
-                        self.layer.Out.time[i] = time
-                        time += TIME_STEP
-                    if time >= 50.0:
-                        self.fail = True
-                        
-            if layer_idx > 0:
-                for i from 0 <= i < self.layer.outs:
-                    total = 0
-                    time  = 0
-                    while (total < self.threshold and time < MAX_TIME):
-                        for h from 0 <= h < self.layers.ins:
-                            spike_time = in_times[h]
-                            if time >= spike_time:
-                                ot = self.link_out(self.layer.weights[i,h], spike_time, time)
-                                if (i >= self.hiddens-IPSP):
-                                    total=total-ot
-                                else:
-                                    total=total+ot
-                        self.layer.Out.time[i] = time
-                        time += TIME_STEP
-                    if time >= 50.0:
-                        self.fail = True
+    #output = 0.0
+    if time >= spike_time:
+        for k in range(SYNAPSES):
+            weight = weights[k]
+            delay  = k + 1
+            ## will fire when current time 
+            ## (timeT) >= time of spike + delay otherwise zero
+            if time >= (spike_time + delay):
+                output += (weight * srfd((time - delay - spike_time)))
+                ## else no charge
+
+
 
 cdef class spikeprop_faster:
     cdef int seed, inputs, hiddens, outputs
-    cdef int threshold
+    cdef public int threshold
     cdef bint fail
     cdef double learning_rate
     cdef np.ndarray hidden_time, output_time, desired_time, input_time
@@ -253,18 +211,18 @@ cdef class spikeprop_faster:
                 for h from 0 <= h < self.inputs:
                     r = c_fmod(c_rand(), 10.0)
                     for k from 0 <= k < SYNAPSES:
-                        self.hidden_weights[i,h,k] = r+1.0
+                        self.hidden_weights[i,h,k] = (r+1.0)
 
             for i in range(self.outputs):
                 for h in range(self.hiddens):
                     r = c_fmod(c_rand(), 10.0)
                     for k in range(SYNAPSES):
-                        self.output_weights[i,h,k] = r+1.0
+                        self.output_weights[i,h,k] = (r+1.0)
+                        
         if Type == 1:
-            mu, sigma = 1.11, 0.1
+            mu, sigma = 1.11, 0.35
             self.hidden_weights = np.random.normal(mu, sigma, size=(self.hiddens, self.inputs, SYNAPSES))
             self.output_weights = np.random.normal(mu, sigma, size=(self.outputs, self.hiddens, SYNAPSES))
-
 
 
         
@@ -374,12 +332,16 @@ cdef class spikeprop_faster:
                         ## pde E
                         ##------ of time
                         ## pde w
+                        
                         E_double_prime = self.o_derive[j,i,k]
                         E_prime = self.error_weight_derivative(actual_time_j, spike_time, delay, delta)
-                        if E_double_prime == 0:
-                            change_weight = -self.learning_rate * (E_prime)
+                        if (sign(E_prime) == sign(E_double_prime)):
+                            ## if the signs are the same do a simple gradient
+                            ## descent
+                            momentum = 0.0
+                            change_weight = -self.learning_rate * (E_prime) + (momentum * self.o_delta[j,i,k])
                         else:
-                            change_weight = 0.35 * (E_prime/(E_double_prime-E_prime)) * self.o_delta[j,i,k] * 2.0
+                            change_weight = (E_prime /(E_double_prime-E_prime)) * self.o_delta[j,i,k]
                             
                         new_weight = old_weight + change_weight
                         self.output_weights[j,i,k] = new_weight
@@ -433,15 +395,16 @@ cdef class spikeprop_faster:
                     IF QUICKPROP:
                         E_double_prime = self.h_derive[i,h,k]
                         E_prime = self.error_weight_derivative(actual_time_i, spike_time, delay, delta)
-                        if E_double_prime == 0:
-                            change_weight = -self.learning_rate * (E_prime)
+                        if sign(E_double_prime) == sign(E_prime) or E_double_prime == 0:
+                            momentum = 0.0
+                            change_weight = -(self.learning_rate * E_prime + (momentum * self.h_delta[i,h,k]))
                         else:
-                            change_weight = 0.35 * (E_prime/(E_double_prime-E_prime)) * self.h_delta[i,h,k]*2.0 
-
+                            change_weight = (E_prime/(E_double_prime-E_prime))  * self.h_delta[i,h,k]
+                            
                         new_weight = old_weight + change_weight
                         self.h_delta[i,h,k]  = change_weight
                         self.h_derive[i,h,k] = E_prime
-                        self.hidden_weights[i,h,k] = new_weight#new_weight
+                        self.hidden_weights[i,h,k] = new_weight
 
                     ELIF RPROP:
                         E_double_prime = self.h_derive[i,h,k]
@@ -563,8 +526,8 @@ cdef class spikeprop_faster:
         return output
 
     cpdef error(self):
-        cdef double total = 0.0
+        total = 0.0
         for j in range(self.outputs):
-            total += (self.output_time[j]-self.desired_time[j]) ** 2
-
-        return (total/2)
+            total += ((self.output_time[j]-self.desired_time[j]) ** 2.0)
+            
+        return (total/2.0)
