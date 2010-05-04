@@ -145,25 +145,30 @@ class modular(spikeprop_math):
         self.forward_pass(input, desired)
         ## Go through every layer backwards
         ## doing the following steps:
-        ##  1) figure out what layer we are on
-        ##  2) calculate the delta j or delta i depending on the 
-        ##     previous step, if this is the last layer we use
-        ##     equation 12, if this is input -> hidden, or hidden to hidden
-        ##     then we use equation 17
-        ##  3) 
-        ##    
+        
+        
         for layer_idx in range(len(self.layers)):
             self.layer = self.layers[layer_idx]
-            for i from 0 <= i < self.layer.outs:
+            for i in xrange(self.layer.next.size):
+                ##  1) figure out what layer we are on
+                ##  2) calculate the delta j or delta i depending on the 
+                ##     previous step, if this is the last layer we use
+                ##     equation 12, if this is input -> hidden, or hidden to hidden
+                ##     then we use equation 17
                 if layer_idx < len(self.layers):
                     self.layer.deltas[i] = self.equation_17(i)
                 elif layer_idx == len(self.layers):
                     self.layer.deltas[i] = self.equation_12(i)
                     
-                
-            for j from 0 <= j < self.layer.outs:
-                actual_time = self.layer.Out.time[j]
-                for i from 0 <= i < self.layer.ins:
+            ##  3) then we go through all of the next neuron set(j) 
+            ##     get the time(actual_time), then go through all the 
+            ##     neurons in the previous set(i)
+            for j in xrange(self.layer.next.size):
+                actual_time = self.layer.next.time[j]
+                for i in xrange(self.layer.prev.size):
+                    ## 4) from there we go through all the synapses(k)
+                    ##    and get the previously calculated delta
+                    ##    and get the delay which is k+1 because we start at 0
                     for k from 0 <= k < SYNAPSES:
                         delta = self.layer.deltas[j]
                         delay = k+1
