@@ -32,9 +32,6 @@ RPROP       = False
 ## - forward_pass
 
 class Math:
-    def __init__(self):
-        pass
-
     def e(self, time):
         """
         >>> m = Math()
@@ -55,17 +52,17 @@ class Math:
         else:
             return 0
 
-    def srfd(self, time):
-        asrfd = 0
+    def spike_response_derivative(self, time):
+        response = 0
         if time <= 0:
-            return asrfd
+            return response
         else:
             return self.e(time) * ((1.0/time) - (1.0/DECAY))
 
     def y(self, time, spike, delay):
-        return self.e(time-spike-delay)
+        return self.e(time - spike - delay)
 
-    def link_out(self, weights, spike, time):
+    def excitation(self, weights, spike, time):
         ## if time >= (spike + delay)
         ## delay_max = SYNAPSES
         ## the delay is 1...16
@@ -79,11 +76,11 @@ class Math:
         for k in xrange(SYNAPSES):
             delay = k+1
             weight = weights[k]
-            output += (weight * self.e(time-spike-delay))
+            output += (weight * self.e(time - spike - delay))
 
         return output
 
-    def link_out_d(self, weights, spike_time, time):
+    def excitation_derivative(self, weights, spike_time, time):
         output = 0.0
         if time >= spike_time:
             for k in xrange(SYNAPSES):
@@ -92,29 +89,30 @@ class Math:
                 ## will fire when current time 
                 ## (timeT) >= time of spike + delay otherwise zero
                 if time >= (spike_time + delay):
-                    output += (weight * self.srfd((time - delay - spike_time)))
+                    output += (weight * self.spike_response_derivative((time - delay - spike_time)))
                     ## else no charge
+                    
         return output
 
-    def equation_12(self, j):
-        return (self.layers[-1].next.time[j]-self.layers[-1].next.desired_time[j]) / \
-            (self.equation_12_bottom(j))
+    def delta_j(self, j):
+        delta_j_top = self.output_layer.next.time[j] - self.output_layer.next.desired_time[j]
+        return delta_j_top / self.delta_j_bottom(j)
 
-    def equation_12_bottom(self, j):
+    def delta_j_bottom(self, j):
         ot = 0.0
         for i in range(self.layer.prev.size):
-            link_out_ = self.link_out_d(self.layer.weights[i, j], 
+            e_derivative =  self.excitation_derivative(self.layer.weights[i, j], 
                             self.layer.prev.time[i], 
                             self.layer.next.time[j])
 
             if i >= (self.layer.prev.size - IPSP):
-                ot = ot - link_out_ 
+                ot -= e_derivative
             else:
-                ot = ot + link_out_
+                ot += e_derivative
 
         return ot
  
-    def equation_17_top(self, i):
+    def delta_i_top(self, i):
         ## the top of equation 17 is from i to j
         ## so in our case it would be from the current layer
         ## (self.layer.prev to self.layer.next) 
@@ -125,7 +123,7 @@ class Math:
         for j in xrange(next_layer.next.size):
             actual_time = next_layer.next.time[j]
             delta = next_layer.deltas[j]
-            link_out_ = self.link_out_d(next_layer.weights[i, j], spike_time, actual_time)
+            link_out_ = self.excitation_derivative(next_layer.weights[i, j], spike_time, actual_time)
             if i >= (self.layer.next.size - IPSP):
                 ot = -link_out_
             else:
@@ -135,13 +133,13 @@ class Math:
 
         return actual
     
-    def equation_17_bottom(self, i):
+    def delta_i_bottom(self, i):
         ## the bottom of equation 17 is from h to i
         actual = 0.0
         actual_time = self.layer.next.time[i]
         for h in xrange(self.layer.prev.size):
             spike_time = self.layer.prev.time[h]
-            ot = self.link_out_d(self.layer.weights[h, i], spike_time, actual_time)
+            ot = self.excitation_derivative(self.layer.weights[h, i], spike_time, actual_time)
             actual += ot
         
         if i >= (self.layer.next.size - IPSP):
@@ -149,7 +147,7 @@ class Math:
         else:
             return actual
 
-    def equation_17(self, i):
+    def delta_i(self, i):
         ## this equation works as follows
         ## we go from i to j in the top equation
         ## we go from h to i in the bottom equation
@@ -163,17 +161,21 @@ class Math:
         ## and    layer[1].prev = 5 which would also be i
         ## lastly layer[1].next = 1 which would be j
 
-        actual = self.equation_17_top(i)/self.equation_17_bottom(i)
+        actual = self.delta_i_top(i)/self.delta_i_bottom(i)
         return actual
             
 
     def change(self, actual_time, spike_time, delay, delta):
-        return (-self.layer.learning_rate * self.y(actual_time, spike_time, delay) * delta)
+        #print -self.layer.learning_rate * delta * self.y(actual_time, spike_time, delay) 
+        return -self.layer.learning_rate * self.y(actual_time, spike_time, delay) * delta
 
     def error_weight_derivative(self, actual_time, spike_time, delay, delta):
         return self.y(actual_time, spike_time, delay) * delta
-
+    
 class neurons:
+    time = None
+    desired_time = None
+    
     def __init__(self, neurons):
         self.neurons      = neurons
         self.time         = np.ndarray((neurons))
@@ -188,7 +190,9 @@ class layer:
     deltas  = None
     derivative = None
     derive_delta = None
-
+    prev = None
+    next = None
+    
     def __init__(self, previous_neurons, next_neurons):
         previous = previous_neurons.size
         next     = next_neurons.size
@@ -202,9 +206,7 @@ class layer:
         self.derivative   = np.random.rand(previous, next, SYNAPSES)
         self.derive_delta = np.random.rand(previous, next, SYNAPSES)
 
-        self._learning_rate = 5
-
-
+        self._learning_rate = 1.0
 
         self.weight_method = 'normalized'
 
@@ -232,18 +234,27 @@ class layer:
 
 class modular(Math):
     ## H (input), I (hidden) and J (output)
-    ## Calculate δj for all outputs according to (12)
-    ## For each subsequent layer I = J − {1...2}
-    ## Calculate δi for all neurons in I according to (17)
-    ## For output layer J , adapt wij by Δwij = −η * Y.i(t.j) * δj
-    ## For each subsequent layer I = J − {1...2}
-    ## Adapt w.hi by Δw.ij = −η * Y.h(t.i) * δi (18)
+    ## 1) Firing time is x.j ≥ v , progressing from the
+    ##    hidden layer firing times, the firing times of
+    ##    the output layer can be found, for a
+    ##    given set of input firing times.
+    ##
+    ## 2) Calculate δj for all outputs according to (12)
+    ##    For each subsequent layer I = J − {1...2}
+    ##
+    ## 3) Calculate δi for all neurons in I according to (17)
+    ## 4) For output layer J , adapt w.ij by Δw.ij = −η * Y.i(t.j) * δj
+    ##    For each subsequent layer I = J − {1...2}
+    ## 6) Adapt w.hi by Δw.ij = −η * Y.h(t.i) * δi (18)
     def __init__(self, layers):
         self.layers    = layers
         self.threshold = 50
         self.failed    = False
         self.layer     = None
         self.layer_idx = 0
+        
+        self.output_layer = layers[-1]
+        self.input_layer  = layers[0]
 
         self.propagating_type = 'descent'
         self.propagating_routine = getattr(self, self.propagating_type + '_propagate')
@@ -317,17 +328,22 @@ class modular(Math):
 
         return change_weight
 
-    def delta_j(self):
-        for i in xrange(self.layers[-1].next.size):
-            self.layers[-1].deltas[i] = self.equation_12(i)
+    def _delta_j(self):
+        for j in xrange(self.output_layer.next.size):
+            self.output_layer.deltas[j] = self.delta_j(j)
 
     def backwards_pass(self, input_times, desired_times):
         self.forward_pass(input_times, desired_times)
         if self.fail:
             return False
-
-        ## calculate the delta j
-        self.delta_j()
+        
+        ## the things that can go wrong:
+        ##  [ ] delta j/i
+        ##  [x] y
+        ##  [x] learning rate
+        
+        ## Calculate the delta j
+        self._delta_j()
 
         ## Go through every layer backwards
         ## doing the following steps:
@@ -341,8 +357,8 @@ class modular(Math):
                 ##     previous step, if this is the last layer we use
                 ##     equation 12, if this is input -> hidden, or hidden to hidden
                 ##     then we use equation 17
-                    self.layer.deltas[i] = self.equation_17(i)
-
+                    self.layer.deltas[i] = self.delta_i(i)
+                    
             ##  3) then we go through all of the next neuron set(j) 
             ##     get the time(actual_time), then go through all the 
             ##     neurons in the previous set(i)
@@ -371,10 +387,10 @@ class modular(Math):
                         else:
                             layer = self.layer.prev.size
 
-                        if i >= layer - IPSP:
-                            delta_weight = -self.change(actual_time, spike_time, delay, delta)
-                        else:
-                            delta_weight = self.change(actual_time, spike_time, delay, delta)
+                        #if i >= layer - IPSP:
+                        #    delta_weight = -self.change(actual_time, spike_time, delay, delta)
+                        #else:
+                        delta_weight = self.change(actual_time, spike_time, delay, delta)
 
 
                         new_weight = old_weight + delta_weight
@@ -429,7 +445,7 @@ class modular(Math):
 
                         if time >= spike_time:
                             layer_weights = self.layer.weights[h, i]
-                            ot = self.link_out(layer_weights, spike_time, time)
+                            ot = self.excitation(layer_weights, spike_time, time)
                             if self.last_layer:
                                 if i >= (self.layer.prev.size - IPSP):
                                     total -= ot
