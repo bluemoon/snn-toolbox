@@ -8,7 +8,7 @@ import random
 import numpy   as np
 import cPickle as cp
 
-from spikeprop_ng import *
+#from spikeprop_ng import *
 
 DECAY       = 7
 SYNAPSES    = 16
@@ -29,14 +29,21 @@ RPROP       = False
 ## - sign
 ## - srfd
 
+## - forward_pass
 
 class Math:
     def __init__(self):
         pass
 
     def e(self, time):
+        """
+        >>> m = Math()
+        >>> m.e(3)
+        0.75891212290587329
+        """
+
         if time > 0:
-            return (time * np.exp( (1.0 - time) / DECAY ))/DECAY
+            return (time * np.exp(1 - time * 0.142857143 )) * 0.142857143
         else:
             return 0
 
@@ -90,7 +97,7 @@ class Math:
         return output
 
     def equation_12(self, j):
-        return (self.layer.next.time[j]-self.layer.next.desired_time[j]) / \
+        return (self.layers[-1].next.time[j]-self.layers[-1].next.desired_time[j]) / \
             (self.equation_12_bottom(j))
 
     def equation_12_bottom(self, j):
@@ -99,6 +106,7 @@ class Math:
             link_out_ = self.link_out_d(self.layer.weights[i, j], 
                             self.layer.prev.time[i], 
                             self.layer.next.time[j])
+
             if i >= (self.layer.prev.size - IPSP):
                 ot = ot - link_out_ 
             else:
@@ -113,7 +121,7 @@ class Math:
         ot = 0.0
         actual = 0.0
         next_layer = self.layers[self.layer_idx+1]
-        spike_time = self.layer.next.time[i]
+        spike_time = next_layer.prev.time[i]
         for j in xrange(next_layer.next.size):
             actual_time = next_layer.next.time[j]
             delta = next_layer.deltas[j]
@@ -122,8 +130,8 @@ class Math:
                 ot = -link_out_
             else:
                 ot = link_out_
-
-            actual = actual + (delta * ot)
+                
+            actual += (delta * ot)
 
         return actual
     
@@ -176,6 +184,11 @@ class neurons:
         return self.neurons
     
 class layer:
+    weights = None
+    deltas  = None
+    derivative = None
+    derive_delta = None
+
     def __init__(self, previous_neurons, next_neurons):
         previous = previous_neurons.size
         next     = next_neurons.size
@@ -184,18 +197,21 @@ class layer:
         self.next  = next_neurons
 
         self.weights = np.random.rand(previous, next, SYNAPSES) * 10.0
-        self.delays  = np.random.rand(previous, next)
-        self.deltas  = np.random.rand(next)
+        #self.delays  = np.random.rand(previous, next)
+        self.deltas  = np.zeros(next)
         self.derivative   = np.random.rand(previous, next, SYNAPSES)
         self.derive_delta = np.random.rand(previous, next, SYNAPSES)
 
-        self.learning_rate = 1.0
-        self.weight_method = 'random1'
+        self._learning_rate = 5
+
+
+
+        self.weight_method = 'normalized'
 
         if self.weight_method == 'random1':
             for i in xrange(self.prev.size):
                 for h in xrange(self.next.size):
-                    r = random.randint(0, 32767) % 10
+                    r = random.randint(0, 255) % 10.0
                     for k in xrange(SYNAPSES):
                         self.weights[i, h, k] = (r + 1)
 
@@ -207,12 +223,15 @@ class layer:
                         self.weights[i, h, k] = (r + 1)
 
         elif self.weight_method == 'normalized':
-            mu, sigma = 1.11, 0.35
+            mu, sigma = 5.1, 1
             self.weights = np.random.normal(mu, sigma, size=(previous, next, SYNAPSES))
 
-
+    @property
+    def learning_rate(self):
+        return self._learning_rate
 
 class modular(Math):
+    ## H (input), I (hidden) and J (output)
     ## Calculate δj for all outputs according to (12)
     ## For each subsequent layer I = J − {1...2}
     ## Calculate δi for all neurons in I according to (17)
@@ -220,8 +239,6 @@ class modular(Math):
     ## For each subsequent layer I = J − {1...2}
     ## Adapt w.hi by Δw.ij = −η * Y.h(t.i) * δi (18)
     def __init__(self, layers):
-        Math.__init__(self)
-
         self.layers    = layers
         self.threshold = 50
         self.failed    = False
@@ -283,51 +300,61 @@ class modular(Math):
         return value
 
     def descent_propagate(self, i, j, k):
-        if i >= self.layer.prev.size - IPSP:
-            change_weight = -self.change(self.actual_time,
-                                         self.spike_time,
-                                         self.delay, 
-                                         self.delta)
+        change_weight = self.change(self.actual_time,
+                                     self.spike_time,
+                                     self.delay, 
+                                     self.delta)
+
+        if self.last_layer and i >= (self.layer.prev.size - IPSP):
+            return -change_weight
+        elif self.last_layer:
+            return change_weight
+            
+        if not self.last_layer and i >= (self.layer.next.size - IPSP):
+            return -change_weight
         else:
-            change_weight = self.change(self.actual_time,
-                                        self.spike_time,
-                                        self.delay,
-                                        self.delta)
+            return change_weight
+
         return change_weight
+
+    def delta_j(self):
+        for i in xrange(self.layers[-1].next.size):
+            self.layers[-1].deltas[i] = self.equation_12(i)
 
     def backwards_pass(self, input_times, desired_times):
         self.forward_pass(input_times, desired_times)
         if self.fail:
             return False
 
+        ## calculate the delta j
+        self.delta_j()
+
         ## Go through every layer backwards
         ## doing the following steps:
-        for layer_idx in range(len(self.layers)-1, -1, -1):
+        for layer_idx in xrange(len(self.layers)-1, -1, -1):
             self.layer_idx = layer_idx
             self.layer = self.layers[self.layer_idx]
-            for i in xrange(self.layer.next.size):
+            if not self.last_layer:
+                for i in xrange(self.layer.next.size):
                 ##  1) figure out what layer we are on
                 ##  2) calculate the delta j or delta i depending on the 
                 ##     previous step, if this is the last layer we use
                 ##     equation 12, if this is input -> hidden, or hidden to hidden
                 ##     then we use equation 17
-                if not self.last_layer:
                     self.layer.deltas[i] = self.equation_17(i)
 
-                elif self.last_layer:
-                    self.layer.deltas[i] = self.equation_12(i)
-                
             ##  3) then we go through all of the next neuron set(j) 
             ##     get the time(actual_time), then go through all the 
             ##     neurons in the previous set(i)
             ##     and get the previously calculated delta
             for j in xrange(self.layer.next.size):
-                self.actual_time = self.layer.next.time[j]
-                self.delta = self.layer.deltas[j]
+                actual_time = self.layer.next.time[j]
+                delta = self.layer.deltas[j]
+                #print layer_idx, self.layer.deltas
                 for i in xrange(self.layer.prev.size):
                     ## 4) from there we go through all the synapses(k)
+                    spike_time = self.layer.prev.time[i]
                     for k in xrange(SYNAPSES):
-                        self.delay = k+1
                         ## 5) we then get the spike time of the last layer(spike_time)
                         ##    get the last weight(old_weight) and if we are on the last
                         ##    layer
@@ -336,9 +363,20 @@ class modular(Math):
                         ## -------  = ε.ij^k(t-t.i-d.ij^k)δ.{i,j}
                         ## ∂w.ij^k
 
-                        self.spike_time = self.layer.prev.time[i]
-                        old_weight = self.layer.weights[i,j,k]
-                        delta_weight = self.propagating_routine(i, j, k)
+                        delay = k + 1
+                        old_weight = self.layer.weights[i, j, k]
+                        #delta_weight = self.propagating_routine(i, j, k)
+                        if not self.last_layer:
+                            layer = self.layer.next.size
+                        else:
+                            layer = self.layer.prev.size
+
+                        if i >= layer - IPSP:
+                            delta_weight = -self.change(actual_time, spike_time, delay, delta)
+                        else:
+                            delta_weight = self.change(actual_time, spike_time, delay, delta)
+
+
                         new_weight = old_weight + delta_weight
                         
                         if self.neg_weights:
@@ -348,6 +386,9 @@ class modular(Math):
                                 self.layer.weights[i, j, k] = new_weight
                             else:
                                 self.layer.weights[i, j, k] = 0.0
+
+
+
         return self.error
     
 
@@ -381,16 +422,16 @@ class modular(Math):
                     total = 0
                     for h in xrange(self.layer.prev.size):
                         ## get the previous layers spike time
-                        if self.first_layer:
-                            spike_time = input_times[h]
-                        else:
-                            spike_time = self.layer.prev.time[h]
+                        #if self.first_layer:
+                        #    spike_time = input_times[h]
+                        #else:
+                        spike_time = self.layer.prev.time[h]
 
                         if time >= spike_time:
                             layer_weights = self.layer.weights[h, i]
                             ot = self.link_out(layer_weights, spike_time, time)
                             if self.last_layer:
-                                if i >= self.layer.next.size:
+                                if i >= (self.layer.prev.size - IPSP):
                                     total -= ot
                                 else:
                                     total += ot
@@ -402,17 +443,22 @@ class modular(Math):
                     self.layer.next.time[i] = time
                     time += TIME_STEP
 
+                if time >= 50.0:
+                    self.failed = True
 
-
-                    if time >= 50.0:
-                        self.failed = True
-                        
+        return self.error
                         
     @property
     def error(self):
         last_layer = self.layers[-1]
         total = 0.0
         for j in range(last_layer.next.size):
-            total += ((last_layer.next.time[j] - last_layer.next.desired_time[j]) ** 2.0)
+            total += (last_layer.next.time[j] - last_layer.next.desired_time[j]) ** 2
             
-        return (total/2.0)
+        return (total * 0.5)
+
+
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()

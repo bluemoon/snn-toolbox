@@ -231,7 +231,6 @@ class spikeprop:
         actual = self._e17top(i, delta_j)/self._e17bottom(i)
         return actual
             
-
     def change(self, actual_time, spike_time, delay, delta):
         return (-self.learning_rate * self._y(actual_time, spike_time, delay)*delta)
 

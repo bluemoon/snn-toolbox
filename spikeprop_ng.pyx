@@ -322,7 +322,7 @@ cdef class spikeprop_faster:
                 ## Spike time of the hidden neuron
                 spike_time = self.hidden_time[i]
                 for k from 0 <= k < SYNAPSES:
-                    delay = k+1
+                    delay = k + 1
                     old_weight = self.output_weights[j,i,k]
                     ##   ∂E
                     ## -------  = ε.ij^k(t-t.i-d.ij^k)δ.j
@@ -390,8 +390,8 @@ cdef class spikeprop_faster:
             for h from 0 <= h < self.inputs:
                 spike_time = self.input_time[h]
                 for k from 0 <= k < SYNAPSES:
-                    delay=k+1
-                    old_weight=self.hidden_weights[i,h,k]
+                    delay = k + 1
+                    old_weight = self.hidden_weights[i, h, k]
                     IF QUICKPROP:
                         E_double_prime = self.h_derive[i,h,k]
                         E_prime = self.error_weight_derivative(actual_time_i, spike_time, delay, delta)
@@ -488,7 +488,7 @@ cdef class spikeprop_faster:
 
         for h in range(self.inputs):
             spike_time = self.input_time[h]
-            ot = self.link_out_d(self.hidden_weights[i,h], spike_time, actual_time)
+            ot = self.link_out_d(self.hidden_weights[i, h], spike_time, actual_time)
             actual = actual + ot
         
         if i >= (self.hiddens-IPSP):

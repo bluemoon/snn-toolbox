@@ -1,11 +1,11 @@
 from optparse import OptionParser
-import matplotlib.pyplot as plt
-import spikeprop
+#import matplotlib.pyplot as plt
+#import spikeprop
 import pstats
 import cProfile
 import numpy as np
 import profile
-import pylab
+
 
 
 parser = OptionParser()
@@ -35,12 +35,12 @@ def xor(which):
 
 t = 'from_python'
 
-from spikeprop_ng import *
+#from spikeprop_ng       import *
 from spikeprop_modular_ import *
 
-prop = spikeprop_faster(3, 5, 1)
-prop.initialise_weights()
-prop.clear_slopes()
+#prop = spikeprop_faster(3, 5, 1)
+#prop.initialise_weights()
+#prop.clear_slopes()
 
 
 def run_modular():
@@ -63,7 +63,7 @@ def run_modular():
 
     while x < iterations and Total_error > 0.5 and prop.fail == False:
         for w in xrange(4):
-            input, desired = spikeprop.xor(w)
+            input, desired = xor(w)
             error = prop.backwards_pass(input, desired)
             if error == False:
                 break
@@ -107,7 +107,7 @@ def run_test(threshold):
 
             
 if options.debug:
-    cProfile.run("run_test()","Profile.prof")
+    cProfile.run("run_modular()","Profile.prof")
     s = pstats.Stats("Profile.prof")
     s.strip_dirs().sort_stats("time").print_stats()
 else:

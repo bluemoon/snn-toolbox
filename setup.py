@@ -8,7 +8,7 @@ includes = [
     ]
 
 spikeprop = Extension("spikeprop_modular",
-                      ["spikeprop_modular.pyx","spike_prop_.c"],
+                      ["spikeprop_modular_.py","spike_prop_.c"],
                       include_dirs=includes,
                       #libraries=['profiler'],
                       )
