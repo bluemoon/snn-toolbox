@@ -20,6 +20,16 @@ QUICKPROP   = False
 RPROP       = False
 
 class spikeprop_math:
+
+    @staticmethod
+    def sign(number):
+        if number > 0:
+            return 1
+        elif number < 0:
+            return -1
+        else:
+            return 0
+
     @staticmethod
     def srfd(time):
         asrfd = 0
@@ -131,6 +141,9 @@ class layer:
         self.weights = np.random.rand(self.ins, self.outs, SYNAPSES) * 10.0
         self.delays  = np.random.rand(self.ins, self.outs)
         self.deltas  = np.random.rand(self.ins, self.outs)
+        self.derivative   = np.random.rand(self.ins, self.outs, SYNAPSES)
+        self.derive_delta = np.random.rand(self.ins, self.outs, SYNAPSES)
+
         self.learning_rate = 1.0
         
 
@@ -140,50 +153,69 @@ class modular(spikeprop_math):
         self.threshold = 50
         self.failed = False
         self.layer = None
-    
+        self.propagating_routine = 'quickprop' + '_propagate'
+
+    @property
+    def neg_weights(self):
+        return NEG_WEIGHTS
+
+    def quickprop_propagate(self, i, j, k):
+        double_prime = self.layer.derivative[i,j,k]
+        prime = self.error_weight_derivative(self.actual_time, 
+                                             self.spike_time, 
+                                             self.delay, 
+                                             self.delta)
+
+        if self.sign(prime) == self.sign(double_prime):
+            return -self.layer.learning_rate * prime + \
+                (momentum * self.layer.derive_delta[i,j,k])
+        else:
+            return (prime / (double_prime - prime)) * self.derive_delta[i, j, k]
+        
+        
     def backwards_pass(self, input_times, desired_times):
         self.forward_pass(input, desired)
         ## Go through every layer backwards
         ## doing the following steps:
-        
-        
-        for layer_idx in range(len(self.layers)):
+        for layer_idx in xrange(len(self.layers)):
             self.layer = self.layers[layer_idx]
+            if layer_idx - len(self.layers) == 1:
+                last_layer = True
+            else:
+                last_layer = False
+
             for i in xrange(self.layer.next.size):
                 ##  1) figure out what layer we are on
                 ##  2) calculate the delta j or delta i depending on the 
                 ##     previous step, if this is the last layer we use
                 ##     equation 12, if this is input -> hidden, or hidden to hidden
                 ##     then we use equation 17
-                if layer_idx < len(self.layers):
+                if not last_layer:
                     self.layer.deltas[i] = self.equation_17(i)
-                elif layer_idx == len(self.layers):
+                elif last_layer:
                     self.layer.deltas[i] = self.equation_12(i)
-                    
+                
             ##  3) then we go through all of the next neuron set(j) 
             ##     get the time(actual_time), then go through all the 
             ##     neurons in the previous set(i)
             for j in xrange(self.layer.next.size):
-                actual_time = self.layer.next.time[j]
+                self.actual_time = self.layer.next.time[j]
                 for i in xrange(self.layer.prev.size):
                     ## 4) from there we go through all the synapses(k)
                     ##    and get the previously calculated delta
                     ##    and get the delay which is k+1 because we start at 0
                     for k from 0 <= k < SYNAPSES:
-                        delta = self.layer.deltas[j]
-                        delay = k+1
-
-                        spike_time = self.layer.In.time[i]
+                        self.delta = self.layer.deltas[j]
+                        self.delay = k+1
+                        ## 5) we then get the spike time of the last layer(spike_time)
+                        ##    get the last weight(old_weight) and if we are on the last
+                        ##    layer we proceed to 6a otherwise 6b
+                        self.spike_time = self.layer.prev.time[i]
                         old_weight = self.layer.weights[i,j,k]
+                        delta_weight = self.propagating_routine(i, j, k)
+                        new_weight = old_weight + delta_weight
                         
-                        if i >= self.layer.outs-IPSP:
-                            change_weight = -self.change(actual_time, spike_time, delay, delta)
-                        else:
-                            change_weight = self.change(actual_time, spike_time, delay, delta)
-
-                        new_weight = old_weight + change_weight
-                        
-                        IF NEG_WEIGHTS:
+                        if NEG_WEIGHTS:
                             self.layer.weights[i,j,k] = new_weight
                         ELSE:
                             if new_weight >= 0.0:
