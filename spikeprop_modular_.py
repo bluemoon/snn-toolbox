@@ -8,6 +8,8 @@ import os
 import numpy   as np
 import cPickle as cp
 
+from spikeprop_ng import *
+
 DECAY       = 7
 SYNAPSES    = 16
 IPSP        = 1
@@ -19,7 +21,10 @@ MP          = True
 QUICKPROP   = False
 RPROP       = False
 
-class spikeprop_math:
+class Math:
+    @staticmethod
+    def e(time):
+        return (time * np.exp( (1.0 - time) / DECAY ))/DECAY
 
     @staticmethod
     def sign(number):
@@ -36,11 +41,11 @@ class spikeprop_math:
         if time <= 0:
             return asrfd
         else:
-            return e(time) * ((1.0/time) - (1.0/DECAY))
+            return Math.e(time) * ((1.0/time) - (1.0/DECAY))
 
     @staticmethod
     def y(time, spike, delay):
-        return e(time-spike-delay)
+        return Math.e(time-spike-delay)
 
     @staticmethod
     def link_out(weights, spike, time):
@@ -50,12 +55,13 @@ class spikeprop_math:
         ## if time >= (spike + {1...16})
         ## so i need to find the minimum delay size and
         ## start the loop from there
+        output = 0.0
 
         i = int(time-spike)
-        for k from 0 <= k < i:
+        for k in xrange(i):
             delay = k+1
-            weight = p[k]
-            output += (weight * e(time-spike-delay))
+            weight = weights[k]
+            output += (weight * Math.e(time-spike-delay))
 
         return output
 
@@ -63,62 +69,79 @@ class spikeprop_math:
     def link_out_d(weights, spike_time, time):
         output = 0.0
         if time >= spike_time:
-            for k in range(SYNAPSES):
+            for k in xrange(SYNAPSES):
                 weight = weights[k]
                 delay  = k + 1
                 ## will fire when current time 
                 ## (timeT) >= time of spike + delay otherwise zero
                 if time >= (spike_time + delay):
-                    output += (weight * spikeprop_math.srfd((time - delay - spike_time)))
+                    output += (weight * Math.srfd((time - delay - spike_time)))
                     ## else no charge
+        return output
 
     def equation_12(self, j):
-        return (self.desired_time[j]-self.output_time[j])/(self._e12bottom(j))
+        return (self.layer.time[j]-self.layer.desired_time[j]) / \
+            (self.equation_12_bottom(j))
 
-    def _e12bottom(self, j):
+    def equation_12_bottom(self, j):
         ot = 0.0
-        for i in range(self.hiddens):
-            if i >= (self.hiddens - IPSP):
-                ot = ot - self.link_out_d(self.output_weights[j,i], \
-                self.hidden_time[i], self.output_time[j])
+        for i in range(self.layer.prev.size):
+            link_out_ = self.link_out_d(self.layer.weights[j,i], 
+                            self.layers[self.layer_idx-1].next.time[i], 
+                            self.layer.next.time[j])
+            if i >= (self.layer.prev.size - IPSP):
+                ot = ot - link_out_ 
             else:
-                ot = ot + self.link_out_d(self.output_weights[j,i], \
-                self.hidden_time[i], self.output_time[j])
+                ot = ot + link_out_
 
         return ot
  
-    def equation_17_top(self, i, delta_j):
+    def equation_17_top(self, i):
+        ## the top of equation 17 is from i to j
+        ## so in our case it would be from the current layer
+        ## (self.layer.prev to self.layer.next) 
         ot = 0.0
         actual = 0.0
-        
-        spike_time = self.layer.Out.time[i]
-        for j in range(self.layers[-1].outs):
-            actual_time_j = self.layers[-1].Out.time[j]
-            dj = delta_j[j]
-            if i >= (self.layer.outs-IPSP):
-                ot = -self.link_out_d(self.layer.weights[j,i], spike_time, actual_time_j)
+        next_layer = self.layers[self.layer_idx+1]
+        spike_time = self.layer.next.time[i]
+        for j in xrange(next_layer.prev.size):
+            actual_time = next_layer.prev.time[j]
+            delta = next_layer.deltas[j]
+            link_out_ = Math.link_out_d(next_layer.weights[j,i], spike_time, actual_time)
+            print delta, link_out_
+            if i >= (self.layer.next.size - IPSP):
+                ot = -link_out_
             else:
-                ot = self.link_out_d(self.layer.weights[j,i], spike_time, actual_time_j)
-            actual = actual + (dj*ot)
+                ot = link_out_
+
+            actual = actual + (delta * ot)
 
         return actual
     
     def equation_17_bottom(self, i):
+        ## the bottom of equation 17 is from h to i
         actual = 0.0
-        actual_time = self.hidden_time[i]
-
-        for h in range(self.inputs):
-            spike_time = self.input_time[h]
-            ot = self.link_out_d(self.hidden_weights[i,h], spike_time, actual_time)
+        actual_time = self.layer.next.time[i]
+        for h in xrange(self.next.size):
+            spike_time = self..next.time[h]
+            ot = Math.link_out_d(self.weights[i,h], spike_time, actual_time)
             actual = actual + ot
         
-        if i >= (self.hiddens-IPSP):
+        if i >= (self.layer.prev.size - IPSP):
             return -actual
         else:
             return actual
 
     def equation_17(self, i):
-        actual = self.equation_17_top(i, self.layer.deltas[i])/self.equation_17_bottom(i)
+        ## this equation works as follows
+        ## we go from i to j in the top equation
+        ## we go from h to i in the bottom equation
+        ## so we need to go from the current layer
+        ##   self.layer.prev as h to self.layer.next as i
+        ## and then
+        ##   self.layer.next as i to self.layers[self.layer_idx+1].prev as j
+        
+        actual = self.equation_17_top(i)/self.equation_17_bottom(i)
         return actual
             
 
@@ -127,38 +150,63 @@ class spikeprop_math:
 
 class neurons:
     def __init__(self, neurons):
-        self.neurons = neurons
-        self.time    = np.ndarray((neurons))
+        self.neurons      = neurons
+        self.time         = np.ndarray((neurons))
+        self.desired_time = np.ndarray((neurons))
 
     @property
     def size(self):
-        return len(self.neurons)
+        return self.neurons
     
 class layer:
     def __init__(self, previous, next):
-        self.prev  = previous
-        self.next  = next
-        self.weights = np.random.rand(self.ins, self.outs, SYNAPSES) * 10.0
-        self.delays  = np.random.rand(self.ins, self.outs)
-        self.deltas  = np.random.rand(self.ins, self.outs)
-        self.derivative   = np.random.rand(self.ins, self.outs, SYNAPSES)
-        self.derive_delta = np.random.rand(self.ins, self.outs, SYNAPSES)
+        self.prev  = neurons(previous)
+        self.next  = neurons(next)
+        self.weights = np.random.rand(previous, next, SYNAPSES) * 10.0
+        self.delays  = np.random.rand(previous, next)
+        self.deltas  = np.random.rand(previous, next)
+        self.derivative   = np.random.rand(previous, next, SYNAPSES)
+        self.derive_delta = np.random.rand(previous, next, SYNAPSES)
 
         self.learning_rate = 1.0
         
 
-class modular(spikeprop_math):
+class modular(Math):
     def __init__(self, layers):
         self.layers    = layers
         self.threshold = 50
-        self.failed = False
-        self.layer = None
+        self.failed    = False
+        self.layer     = None
+        self.layer_idx = 0
         self.propagating_routine = 'quickprop' + '_propagate'
 
     @property
     def neg_weights(self):
         return NEG_WEIGHTS
 
+    @property
+    def last_layer(self):
+        if self.layer_idx - len(self.layers) == 1:
+            last_layer = True
+        else:
+            last_layer = False
+        return last_layer
+
+    @property
+    def first_layer(self):
+        if self.layer_idx == 0:
+            first_layer = True
+        else:
+            first_layer = False
+        return first_layer
+
+    @property
+    def hidden_layer(self):
+        if not self.first_layer and not self.last_layer:
+            return True
+        else:
+            return False
+            
     def quickprop_propagate(self, i, j, k):
         double_prime = self.layer.derivative[i,j,k]
         prime = self.error_weight_derivative(self.actual_time, 
@@ -167,32 +215,31 @@ class modular(spikeprop_math):
                                              self.delta)
 
         if self.sign(prime) == self.sign(double_prime):
-            return -self.layer.learning_rate * prime + \
+            value =  -self.layer.learning_rate * prime + \
                 (momentum * self.layer.derive_delta[i,j,k])
         else:
-            return (prime / (double_prime - prime)) * self.derive_delta[i, j, k]
+            value = (prime / (double_prime - prime)) * self.derive_delta[i, j, k]
         
+        self.layer.derive_delta[i,j,k] = value
+        self.layer.derivative[i, j, k] = prime
+        return value
         
     def backwards_pass(self, input_times, desired_times):
-        self.forward_pass(input, desired)
+        self.forward_pass(input_times, desired_times)
         ## Go through every layer backwards
         ## doing the following steps:
         for layer_idx in xrange(len(self.layers)):
+            self.layer_idx = layer_idx
             self.layer = self.layers[layer_idx]
-            if layer_idx - len(self.layers) == 1:
-                last_layer = True
-            else:
-                last_layer = False
-
             for i in xrange(self.layer.next.size):
                 ##  1) figure out what layer we are on
                 ##  2) calculate the delta j or delta i depending on the 
                 ##     previous step, if this is the last layer we use
                 ##     equation 12, if this is input -> hidden, or hidden to hidden
                 ##     then we use equation 17
-                if not last_layer:
+                if not self.last_layer:
                     self.layer.deltas[i] = self.equation_17(i)
-                elif last_layer:
+                elif self.last_layer:
                     self.layer.deltas[i] = self.equation_12(i)
                 
             ##  3) then we go through all of the next neuron set(j) 
@@ -204,7 +251,7 @@ class modular(spikeprop_math):
                     ## 4) from there we go through all the synapses(k)
                     ##    and get the previously calculated delta
                     ##    and get the delay which is k+1 because we start at 0
-                    for k from 0 <= k < SYNAPSES:
+                    for k in xrange(SYNAPSES):
                         self.delta = self.layer.deltas[j]
                         self.delay = k+1
                         ## 5) we then get the spike time of the last layer(spike_time)
@@ -217,7 +264,7 @@ class modular(spikeprop_math):
                         
                         if NEG_WEIGHTS:
                             self.layer.weights[i,j,k] = new_weight
-                        ELSE:
+                        else:
                             if new_weight >= 0.0:
                                 self.layer.weights[i,j,k] = new_weight#new_weight
                             else:
@@ -229,7 +276,7 @@ class modular(spikeprop_math):
         ## The first layer will be the furthest most left
         ## and the last layer will be the furthest most right
         ## 0 and -1 respectively
-        self.layers[0].prev.time      = in_times
+        self.layers[0].prev.time      = input_times
         self.layers[-1].next.desired  = desired_times
         
         ## XXX: figure out if i should do this forwards
@@ -237,6 +284,7 @@ class modular(spikeprop_math):
         total = 0
         for layer_idx in xrange(len(self.layers)):
             self.layer = self.layers[layer_idx]
+            self.layer_idx = layer_idx
             ## we now need to run from layer to layer
             ## first we must go through the next layer size(i)
             ## then we go through the previous layer(h)
@@ -252,7 +300,11 @@ class modular(spikeprop_math):
                 while (total < self.threshold and time < MAX_TIME):
                     for h in xrange(self.layer.prev.size):
                         ## get the previous layers spike time
-                        spike_time = input_times[h]
+                        if self.first_layer:
+                            spike_time = input_times[h]
+                        else:
+                            spike_time = self.layer.prev.time[h]
+
                         if time >= spike_time:
                             layer_weights = self.layer.weights[h,i]
                             total += self.link_out(layer_weights, spike_time, time)

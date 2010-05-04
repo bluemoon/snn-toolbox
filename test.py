@@ -36,7 +36,7 @@ def xor(which):
 t = 'from_python'
 
 from spikeprop_ng import *
-from spikeprop_modular import *
+from spikeprop_modular_ import *
 
 prop = spikeprop_faster(3, 5, 1)
 prop.initialise_weights()
