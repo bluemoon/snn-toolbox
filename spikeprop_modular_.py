@@ -104,10 +104,10 @@ class Math:
         actual = 0.0
         next_layer = self.layers[self.layer_idx+1]
         spike_time = self.layer.next.time[i]
-        for j in xrange(next_layer.prev.size):
-            actual_time = next_layer.prev.time[j]
+        for j in xrange(next_layer.next.size):
+            actual_time = next_layer.next.time[j]
             delta = next_layer.deltas[j]
-            link_out_ = Math.link_out_d(next_layer.weights[j,i], spike_time, actual_time)
+            link_out_ = Math.link_out_d(next_layer.weights[i, j], spike_time, actual_time)
             print delta, link_out_
             if i >= (self.layer.next.size - IPSP):
                 ot = -link_out_
@@ -122,12 +122,12 @@ class Math:
         ## the bottom of equation 17 is from h to i
         actual = 0.0
         actual_time = self.layer.next.time[i]
-        for h in xrange(self.next.size):
-            spike_time = self..next.time[h]
-            ot = Math.link_out_d(self.weights[i,h], spike_time, actual_time)
+        for h in xrange(self.layer.prev.size):
+            spike_time = self.layer.prev.time[h]
+            ot = Math.link_out_d(self.layer.weights[h, i], spike_time, actual_time)
             actual = actual + ot
         
-        if i >= (self.layer.prev.size - IPSP):
+        if i >= (self.layer.next.size - IPSP):
             return -actual
         else:
             return actual
@@ -140,7 +140,12 @@ class Math:
         ##   self.layer.prev as h to self.layer.next as i
         ## and then
         ##   self.layer.next as i to self.layers[self.layer_idx+1].prev as j
-        
+        ##
+        ## so if  layer[0].prev = 3 which would be h
+        ## then   layer[0].next = 5 which would be i
+        ## and    layer[1].prev = 5 which would also be i
+        ## lastly layer[1].next = 1 which would be j
+
         actual = self.equation_17_top(i)/self.equation_17_bottom(i)
         return actual
             

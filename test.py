@@ -44,9 +44,13 @@ prop.clear_slopes()
 
 
 def run_modular():
-    In = layer(3,5)
-    Out = layer(5,1)
-    prop = modular([In, Out])
+    ## so if  layer[0].prev = 3 which would be h
+    ## then   layer[0].next = 5 which would be i
+    ## and    layer[1].prev = 5 which would also be i
+    ## lastly layer[1].next = 1 which would be j
+    input  = layer(3, 5)
+    output = layer(5, 1)
+    prop = modular([input, output])
     
     iterations = 5000
     x = 0
