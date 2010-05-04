@@ -19,52 +19,101 @@ MP          = True
 QUICKPROP   = False
 RPROP       = False
 
-def srfd(time):
-    asrfd = 0
-    if time <= 0:
-        return asrfd
-    else:
-        return e(time) * ((1.0/time) - (1.0/DECAY))
+class spikeprop_math:
+    @staticmethod
+    def srfd(time):
+        asrfd = 0
+        if time <= 0:
+            return asrfd
+        else:
+            return e(time) * ((1.0/time) - (1.0/DECAY))
 
-def y(time, spike, delay):
-    return e(time-spike-delay)
+    @staticmethod
+    def y(time, spike, delay):
+        return e(time-spike-delay)
 
-def link_out(np.ndarray weights, double spike, double time):
-    cdef double *p = <double *>weights.data
-    cdef double weight, output = 0.0
-    cdef int k, i, delay
-    ## if time >= (spike + delay)
-    ## delay_max = SYNAPSES
-    ## the delay is 1...16
-    ## if time >= (spike + {1...16})
-    ## so i need to find the minimum delay size and
-    ## start the loop from there
+    @staticmethod
+    def link_out(weights, spike, time):
+        ## if time >= (spike + delay)
+        ## delay_max = SYNAPSES
+        ## the delay is 1...16
+        ## if time >= (spike + {1...16})
+        ## so i need to find the minimum delay size and
+        ## start the loop from there
 
-    i = int(time-spike)
-    for k from 0 <= k < i:
-        delay = k+1
-        weight = p[k]
-        output += (weight * e(time-spike-delay))
+        i = int(time-spike)
+        for k from 0 <= k < i:
+            delay = k+1
+            weight = p[k]
+            output += (weight * e(time-spike-delay))
 
-    return output
+        return output
 
-def link_out_d(self, np.ndarray weights, double spike_time, double time):
-    ## 100%
-    cdef double output = 0.0
-    cdef int delay
-    cdef Py_ssize_t k
+    @staticmethod
+    def link_out_d(weights, spike_time, time):
+        output = 0.0
+        if time >= spike_time:
+            for k in range(SYNAPSES):
+                weight = weights[k]
+                delay  = k + 1
+                ## will fire when current time 
+                ## (timeT) >= time of spike + delay otherwise zero
+                if time >= (spike_time + delay):
+                    output += (weight * spikeprop_math.srfd((time - delay - spike_time)))
+                    ## else no charge
 
-    #output = 0.0
-    if time >= spike_time:
-        for k in range(SYNAPSES):
-            weight = weights[k]
-            delay  = k + 1
-            ## will fire when current time 
-            ## (timeT) >= time of spike + delay otherwise zero
-            if time >= (spike_time + delay):
-                output += (weight * srfd((time - delay - spike_time)))
-                ## else no charge
+    def equation_12(self, j):
+        return (self.desired_time[j]-self.output_time[j])/(self._e12bottom(j))
 
+    def _e12bottom(self, j):
+        ot = 0.0
+        for i in range(self.hiddens):
+            if i >= (self.hiddens - IPSP):
+                ot = ot - self.link_out_d(self.output_weights[j,i], \
+                self.hidden_time[i], self.output_time[j])
+            else:
+                ot = ot + self.link_out_d(self.output_weights[j,i], \
+                self.hidden_time[i], self.output_time[j])
+
+        return ot
+ 
+    def equation_17_top(self, i, delta_j):
+        ot = 0.0
+        actual = 0.0
+        
+        spike_time = self.layer.Out.time[i]
+        for j in range(self.layers[-1].outs):
+            actual_time_j = self.layers[-1].Out.time[j]
+            dj = delta_j[j]
+            if i >= (self.layer.outs-IPSP):
+                ot = -self.link_out_d(self.layer.weights[j,i], spike_time, actual_time_j)
+            else:
+                ot = self.link_out_d(self.layer.weights[j,i], spike_time, actual_time_j)
+            actual = actual + (dj*ot)
+
+        return actual
+    
+    def equation_17_bottom(self, i):
+        actual = 0.0
+        actual_time = self.hidden_time[i]
+
+        for h in range(self.inputs):
+            spike_time = self.input_time[h]
+            ot = self.link_out_d(self.hidden_weights[i,h], spike_time, actual_time)
+            actual = actual + ot
+        
+        if i >= (self.hiddens-IPSP):
+            return -actual
+        else:
+            return actual
+
+    def equation_17(self, i):
+        actual = self.equation_17_top(i, self.layer.deltas[i])/self.equation_17_bottom(i)
+        return actual
+            
+
+    def change(self, actual_time, spike_time, delay, delta):
+        return (-self.layer.learning_rate * y(actual_time, spike_time, delay) * delta)
 
 class neurons:
     def __init__(self, neurons):
@@ -85,7 +134,7 @@ class layer:
         self.learning_rate = 1.0
         
 
-class modular:
+class modular(spikeprop_math):
     def __init__(self, layers):
         self.layers    = layers
         self.threshold = 50
@@ -135,23 +184,32 @@ class modular:
         return self._forward_pass(input, desired)
 
     def _forward_pass(self, in_times, desired_times):
-        ## the c-specific one incurs less overhead than the python
-        ## specific one
-        self.layers[0].In.time      = in_times
-        self.layers[-1].Out.desired = desired_times
+        ## The first layer will be the furthest most left
+        ## and the last layer will be the furthest most right
+        ## 0 and -1 respectively
+        self.layers[0].prev.time      = in_times
+        self.layers[-1].next.desired  = desired_times
         
         total = 0
-        for layer_idx from 0 <= layer_idx < len(self.layers):
+        for layer_idx in xrange(len(self.layers)):
             self.layer = self.layers[layer_idx]
-            if layer_idx == 0:
-                for i from 0 <= i < self.layer.outs:
-                    total = 0
-                    time  = 0
-                    while (total < self.threshold and time < MAX_TIME):
-                        for h from 0 <= h < self.layer.ins:
+            ## we now need to run from layer to layer
+            ## first we must go through the next layer size(i)
+            ## then we go through the previous layer(h)
+            ## get the firing time of the previous layer(h)
+            ## and figure out if the sum of all in our current time(time)
+            ## passes the threshold value which is calculated with 
+            ## spikeprop_math.linkout but because we are a subclass of it
+            ## it can be accessed through self
+            
+            for i in xrange(self.layer.next.size):
+                total = 0
+                time  = 0
+                while (total < self.threshold and time < MAX_TIME):
+                    for h in xrange(self.layer.prev.size):
                             spike_time = in_times[h]
                             if time >= spike_time:
-                                total += link_out(self.layer.weights[h,i], spike_time, time)
+                                total += self.link_out(self.layer.weights[h,i], spike_time, time)
                                 
                         self.layer.Out.time[i] = time
                         time += TIME_STEP
@@ -159,7 +217,7 @@ class modular:
                         self.failed = True
                         
             if layer_idx > 0:
-                for i from 0 <= i < self.layer.outs:
+                for i in xrange(self.layer.next.size):
                     total = 0
                     time  = 0
                     while (total < self.threshold and time < MAX_TIME):
@@ -178,86 +236,11 @@ class modular:
                     if time >= 50.0:
                         self.failed = True
                         
-
-        
-    
-    def equation_12(self, j):
-        return (self.desired_time[j]-self.output_time[j])/(self._e12bottom(j))
-
-    def _e12bottom(self, j):
-        ot = 0.0
-        for i in range(self.hiddens):
-            if i >= (self.hiddens - IPSP):
-                ot = ot - self.link_out_d(self.output_weights[j,i], \
-                self.hidden_time[i], self.output_time[j])
-            else:
-                ot = ot + self.link_out_d(self.output_weights[j,i], \
-                self.hidden_time[i], self.output_time[j])
-
-        return ot
- 
-    def equation_17_top(self, i, delta_j):
-        ot = 0.0
-        actual = 0.0
-        
-        spike_time = self.layer.Out.time[i]
-        for j in range(self.layers[-1].outs):
-            actual_time_j = self.layers[-1].Out.time[j]
-            dj = delta_j[j]
-            if i >= (self.layer.outs-IPSP):
-                ot = -self.link_out_d(self.layer.weights[j,i], spike_time, actual_time_j)
-            else:
-                ot = self.link_out_d(self.layer.weights[j,i], spike_time, actual_time_j)
-            actual = actual + (dj*ot)
-
-        return actual
-    
-    def equation_17_bottom(self, i):
-        cdef double actual = 0.0
-        cdef double ot, actual_time = 0.0
-        actual_time = self.hidden_time[i]
-
-        for h in range(self.inputs):
-            spike_time = self.input_time[h]
-            ot = self.link_out_d(self.hidden_weights[i,h], spike_time, actual_time)
-            actual = actual + ot
-        
-        if i >= (self.hiddens-IPSP):
-            return -actual
-        else:
-            return actual
-
-    def equation_17(self, i):
-        actual = self.equation_17_top(i, self.layer.deltas[i])/self.equation_17_bottom(i)
-        return actual
-            
-
-    def change(self, actual_time, spike_time, delay, delta):
-        return (-self.layer.learning_rate * y(actual_time, spike_time, delay) * delta)
-
-    def link_out_d(self,  weights,  spike_time, time):
-        cdef double output = 0.0
-        cdef int delay
-        cdef Py_ssize_t k
-
-        #output = 0.0
-        if time >= spike_time:
-            for k in range(SYNAPSES):
-                weight = weights[k]
-                delay  = k + 1
-                ## will fire when current time 
-                ## (timeT) >= time of spike + delay otherwise zero
-                if time >= (spike_time + delay):
-                    output += (weight * srfd((time - delay - spike_time)))
-                ## else no charge
-
-        ## else none will fire
-        return output
-
+    @property
     def error(self):
         last_layer = self.layers[-1]
         total = 0.0
         for j in range(last_layer.next.size):
-            total += ((last_layer.Out.time[j]-last_layer.Out.desired[j]) ** 2.0)
+            total += ((last_layer.next.time[j]-last_layer.next.desired[j]) ** 2.0)
             
         return (total/2.0)
