@@ -95,7 +95,7 @@ class Math:
         return output
 
     def delta_j(self, j):
-        delta_j_top = self.output_layer.next.time[j] - self.output_layer.next.desired_time[j]
+        delta_j_top = self.output_layer.next.desired_time[j] - self.output_layer.next.time[j]
         return delta_j_top / self.delta_j_bottom(j)
 
     def delta_j_bottom(self, j):
