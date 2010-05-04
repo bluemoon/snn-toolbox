@@ -51,7 +51,6 @@ def run_modular():
     input  = layer(3, 5)
     output = layer(5, 1)
     prop = modular([input, output])
-    
     iterations = 5000
     x = 0
     Total_error = 10

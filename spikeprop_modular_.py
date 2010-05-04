@@ -153,6 +153,9 @@ class Math:
     def change(self, actual_time, spike_time, delay, delta):
         return (-self.layer.learning_rate * y(actual_time, spike_time, delay) * delta)
 
+    def error_weight_derivative(self, actual_time, spike_time, delay, delta):
+        return self.y(actual_time, spike_time, delay) * delta
+
 class neurons:
     def __init__(self, neurons):
         self.neurons      = neurons
@@ -169,7 +172,7 @@ class layer:
         self.next  = neurons(next)
         self.weights = np.random.rand(previous, next, SYNAPSES) * 10.0
         self.delays  = np.random.rand(previous, next)
-        self.deltas  = np.random.rand(previous, next)
+        self.deltas  = np.random.rand(next)
         self.derivative   = np.random.rand(previous, next, SYNAPSES)
         self.derive_delta = np.random.rand(previous, next, SYNAPSES)
 
@@ -183,7 +186,8 @@ class modular(Math):
         self.failed    = False
         self.layer     = None
         self.layer_idx = 0
-        self.propagating_routine = 'quickprop' + '_propagate'
+        self.propagating_name = 'quickprop' + '_propagate'
+        self.propagating_routine = getattr(self, self.propagating_name)
 
     @property
     def neg_weights(self):
@@ -223,10 +227,10 @@ class modular(Math):
             value =  -self.layer.learning_rate * prime + \
                 (momentum * self.layer.derive_delta[i,j,k])
         else:
-            value = (prime / (double_prime - prime)) * self.derive_delta[i, j, k]
+            value = (prime / (double_prime - prime)) * self.layer.derive_delta[i, j, k]
         
-        self.layer.derive_delta[i,j,k] = value
-        self.layer.derivative[i, j, k] = prime
+        self.layer.derive_delta[i, j, k] = value
+        self.layer.derivative[i, j, k]   = prime
         return value
         
     def backwards_pass(self, input_times, desired_times):
