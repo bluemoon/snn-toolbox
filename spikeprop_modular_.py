@@ -141,9 +141,17 @@ class modular(spikeprop_math):
         self.failed = False
         self.layer = None
     
-    def backwards_pass(self, input, desired):
-        self.desired_time = desired
-        self._forward_pass(input, desired)
+    def backwards_pass(self, input_times, desired_times):
+        self.forward_pass(input, desired)
+        ## Go through every layer backwards
+        ## doing the following steps:
+        ##  1) figure out what layer we are on
+        ##  2) calculate the delta j or delta i depending on the 
+        ##     previous step, if this is the last layer we use
+        ##     equation 12, if this is input -> hidden, or hidden to hidden
+        ##     then we use equation 17
+        ##  3) 
+        ##    
         for layer_idx in range(len(self.layers)):
             self.layer = self.layers[layer_idx]
             for i from 0 <= i < self.layer.outs:
@@ -169,7 +177,7 @@ class modular(spikeprop_math):
                             change_weight = self.change(actual_time, spike_time, delay, delta)
 
                         new_weight = old_weight + change_weight
-                            
+                        
                         IF NEG_WEIGHTS:
                             self.layer.weights[i,j,k] = new_weight
                         ELSE:
@@ -177,19 +185,18 @@ class modular(spikeprop_math):
                                 self.layer.weights[i,j,k] = new_weight#new_weight
                             else:
                                 self.layer.weights[i,j,k] = 0.0
-        return self.error()
-                    
-    def forward_pass(self, np.ndarray input, np.ndarray desired):
-        ## for overhead of python passing
-        return self._forward_pass(input, desired)
+        return self.error
+    
 
-    def _forward_pass(self, in_times, desired_times):
+    def forward_pass(self, input_times, desired_times):
         ## The first layer will be the furthest most left
         ## and the last layer will be the furthest most right
         ## 0 and -1 respectively
         self.layers[0].prev.time      = in_times
         self.layers[-1].next.desired  = desired_times
         
+        ## XXX: figure out if i should do this forwards
+        ## or backwards
         total = 0
         for layer_idx in xrange(len(self.layers)):
             self.layer = self.layers[layer_idx]
@@ -207,34 +214,21 @@ class modular(spikeprop_math):
                 time  = 0
                 while (total < self.threshold and time < MAX_TIME):
                     for h in xrange(self.layer.prev.size):
-                            spike_time = in_times[h]
-                            if time >= spike_time:
-                                total += self.link_out(self.layer.weights[h,i], spike_time, time)
-                                
-                        self.layer.Out.time[i] = time
+                        ## get the previous layers spike time
+                        spike_time = input_times[h]
+                        if time >= spike_time:
+                            layer_weights = self.layer.weights[h,i]
+                            total += self.link_out(layer_weights, spike_time, time)
+                            
                         time += TIME_STEP
+
+                    ## now set the next layers spike time to the current time
+                    ## XXX: check to see if this can be optimized    
+                    self.layer.next.time[i] = time
+
                     if time >= 50.0:
                         self.failed = True
                         
-            if layer_idx > 0:
-                for i in xrange(self.layer.next.size):
-                    total = 0
-                    time  = 0
-                    while (total < self.threshold and time < MAX_TIME):
-                        for h from 0 <= h < self.layer.ins:
-                            spike_time = in_times[i]
-                            if time >= spike_time:
-                                ot = link_out(self.layer.weights[h,i], spike_time, time)
-                                if (i >= self.layer.outs-IPSP):
-                                    total=total-ot
-                                else:
-                                    total=total+ot
-                                    
-                        self.layer.Out.time[i] = time
-                        time += TIME_STEP
-                        
-                    if time >= 50.0:
-                        self.failed = True
                         
     @property
     def error(self):
