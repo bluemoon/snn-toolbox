@@ -464,8 +464,6 @@ cdef class spikeprop_faster:
         return ot
  
     cdef _e17top(self, i, delta_j):
-        #cdef double ot = 0.0
-        #cdef double actual = 0.0
         ot = 0.0
         actual = 0.0
         spike_time = self.hidden_time[i]

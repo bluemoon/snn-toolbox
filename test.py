@@ -56,12 +56,13 @@ def run_modular():
     output = layer(h, o)
 
     prop = modular([input, output])
-
-    iterations = 5000
+    
     x = 0
+    iterations = 5
     Total_error = 10
 
     while x < iterations and Total_error > 0.5 and prop.fail == False:
+        Total_error = 0
         for w in xrange(4):
             input, desired = xor(w)
             error = prop.backwards_pass(input, desired)
@@ -72,6 +73,8 @@ def run_modular():
             
         print "XOR: %d Total Error: %fms" % (x, Total_error)
         x += 1
+
+        
             
 
     
