@@ -8,9 +8,6 @@ import os
 import numpy   as np
 import cPickle as cp
 
-## Initialise the C-API for numpy
-
-## All of the defines that are substituted in at compile time
 DECAY       = 7
 SYNAPSES    = 16
 IPSP        = 1
@@ -23,17 +20,16 @@ QUICKPROP   = False
 RPROP       = False
 
 def srfd(time):
-    cdef double asrfd = 0
+    asrfd = 0
     if time <= 0:
         return asrfd
     else:
         return e(time) * ((1.0/time) - (1.0/DECAY))
 
-cdef double y(double time, double spike, int delay) nogil:
+def y(time, spike, delay):
     return e(time-spike-delay)
 
-@cy.boundscheck(False)
-cdef double link_out(np.ndarray weights, double spike, double time):
+def link_out(np.ndarray weights, double spike, double time):
     cdef double *p = <double *>weights.data
     cdef double weight, output = 0.0
     cdef int k, i, delay
@@ -52,7 +48,7 @@ cdef double link_out(np.ndarray weights, double spike, double time):
 
     return output
 
-cdef link_out_d(self, np.ndarray weights, double spike_time, double time):
+def link_out_d(self, np.ndarray weights, double spike_time, double time):
     ## 100%
     cdef double output = 0.0
     cdef int delay
@@ -70,43 +66,36 @@ cdef link_out_d(self, np.ndarray weights, double spike_time, double time):
                 ## else no charge
 
 
-cdef class neurons:
-    cdef public np.ndarray time
-    cdef public np.ndarray desired
-    
+class neurons:
     def __init__(self, neurons):
+        self.neurons = neurons
         self.time    = np.ndarray((neurons))
-        self.desired = np.ndarray((neurons))
+
+    @property
+    def size(self):
+        return len(self.neurons)
     
 class layer:
-    def __init__(self, in_neurons, out_neurons):
-        self.ins  = in_neurons
-        self.outs = out_neurons
+    def __init__(self, previous, next):
+        self.prev  = previous
+        self.next  = next
         self.weights = np.random.rand(self.ins, self.outs, SYNAPSES) * 10.0
         self.delays  = np.random.rand(self.ins, self.outs)
         self.deltas  = np.random.rand(self.ins, self.outs)
-        self.In  = neurons(self.ins)
-        self.Out = neurons(self.outs)
         self.learning_rate = 1.0
         
 
-cdef class modular:
-    cdef object layers
-    cdef object layer
-    cdef int threshold
-    cdef public bint failed
-    cdef np.ndarray desired_time
-    
+class modular:
     def __init__(self, layers):
         self.layers    = layers
         self.threshold = 50
         self.failed = False
         self.layer = None
     
-    cpdef backwards_pass(self, np.ndarray input, np.ndarray desired):
+    def backwards_pass(self, input, desired):
         self.desired_time = desired
         self._forward_pass(input, desired)
-        for layer_idx from 0 <= layer_idx < len(self.layers):
+        for layer_idx in range(len(self.layers)):
             self.layer = self.layers[layer_idx]
             for i from 0 <= i < self.layer.outs:
                 if layer_idx < len(self.layers):
@@ -141,11 +130,11 @@ cdef class modular:
                                 self.layer.weights[i,j,k] = 0.0
         return self.error()
                     
-    cpdef forward_pass(self, np.ndarray input, np.ndarray desired):
+    def forward_pass(self, np.ndarray input, np.ndarray desired):
         ## for overhead of python passing
         return self._forward_pass(input, desired)
 
-    cdef _forward_pass(self, np.ndarray in_times, np.ndarray desired_times):
+    def _forward_pass(self, in_times, desired_times):
         ## the c-specific one incurs less overhead than the python
         ## specific one
         self.layers[0].In.time      = in_times
@@ -192,10 +181,10 @@ cdef class modular:
 
         
     
-    cdef equation_12(self, j):
+    def equation_12(self, j):
         return (self.desired_time[j]-self.output_time[j])/(self._e12bottom(j))
 
-    cdef _e12bottom(self, j):
+    def _e12bottom(self, j):
         ot = 0.0
         for i in range(self.hiddens):
             if i >= (self.hiddens - IPSP):
@@ -207,7 +196,7 @@ cdef class modular:
 
         return ot
  
-    cdef equation_17_top(self, i, delta_j):
+    def equation_17_top(self, i, delta_j):
         ot = 0.0
         actual = 0.0
         
@@ -223,7 +212,7 @@ cdef class modular:
 
         return actual
     
-    cdef equation_17_bottom(self, i):
+    def equation_17_bottom(self, i):
         cdef double actual = 0.0
         cdef double ot, actual_time = 0.0
         actual_time = self.hidden_time[i]
@@ -238,15 +227,15 @@ cdef class modular:
         else:
             return actual
 
-    cdef equation_17(self, i):
+    def equation_17(self, i):
         actual = self.equation_17_top(i, self.layer.deltas[i])/self.equation_17_bottom(i)
         return actual
             
 
-    cdef change(self, actual_time, spike_time, delay, delta):
+    def change(self, actual_time, spike_time, delay, delta):
         return (-self.layer.learning_rate * y(actual_time, spike_time, delay) * delta)
 
-    cdef link_out_d(self, np.ndarray weights, double spike_time, double time):
+    def link_out_d(self,  weights,  spike_time, time):
         cdef double output = 0.0
         cdef int delay
         cdef Py_ssize_t k
@@ -265,10 +254,10 @@ cdef class modular:
         ## else none will fire
         return output
 
-    cdef error(self):
+    def error(self):
         last_layer = self.layers[-1]
         total = 0.0
-        for j in range(last_layer.outs):
+        for j in range(last_layer.next.size):
             total += ((last_layer.Out.time[j]-last_layer.Out.desired[j]) ** 2.0)
             
         return (total/2.0)
