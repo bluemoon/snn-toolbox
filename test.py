@@ -48,20 +48,26 @@ def run_modular():
     ## then   layer[0].next = 5 which would be i
     ## and    layer[1].prev = 5 which would also be i
     ## lastly layer[1].next = 1 which would be j
-    input  = layer(3, 5)
-    output = layer(5, 1)
+    i = neurons(3)
+    h = neurons(5)
+    o = neurons(1)
+
+    input  = layer(i, h)
+    output = layer(h, o)
+
     prop = modular([input, output])
+
     iterations = 5000
     x = 0
     Total_error = 10
-    while x < iterations and Total_error > 0.5 and prop.failed == False:
+
+    while x < iterations and Total_error > 0.5 and prop.fail == False:
         for w in xrange(4):
             input, desired = spikeprop.xor(w)
             error = prop.backwards_pass(input, desired)
-            print error
             if error == False:
                 break
-
+            
             Total_error += error
             
         print "XOR: %d Total Error: %fms" % (x, Total_error)
