@@ -1,7 +1,3 @@
-# cython: profile=False
-# cython: boundscheck=False
-# cython: wraparound=False
-# cython: infer_types=True
 # encoding: utf-8
 # filename: spikeprop_ng.pyx
 
@@ -9,36 +5,24 @@
 ## CPU_CORES = mp.cpu_cores() 
 import os
 
-from spikeprop  cimport *
-
-import  numpy  as np
+import numpy   as np
 import cPickle as cp
-import numpy  as np
-
-
-## V is a set of spiking neurons
-## V ⊆ X
-## V ⊆ Y
-## X = input
-## Y = output
 
 ## Initialise the C-API for numpy
-np.import_array()
 
 ## All of the defines that are substituted in at compile time
-DEF DECAY       = 7
-DEF SYNAPSES    = 16
-DEF IPSP        = 1
-DEF MAX_TIME    = 50
-DEF TIME_STEP   = 0.01
-DEF NEG_WEIGHTS = False
-DEF MP          = True
+DECAY       = 7
+SYNAPSES    = 16
+IPSP        = 1
+MAX_TIME    = 50
+TIME_STEP   = 0.01
+NEG_WEIGHTS = False
+MP          = True
 
-DEF QUICKPROP   = False
-DEF RPROP       = False
+QUICKPROP   = False
+RPROP       = False
 
-@cy.cdivision(True)
-cdef double srfd(double time) nogil:
+def srfd(time):
     cdef double asrfd = 0
     if time <= 0:
         return asrfd
