@@ -58,7 +58,7 @@ def run_modular():
     prop = modular([input, output])
     
     x = 0
-    iterations = 5
+    iterations = 2
     Total_error = 10
 
     while x < iterations and Total_error > 0.5 and prop.fail == False:

@@ -19,14 +19,40 @@ if WEAVE:
     from numpy.distutils.system_info import get_info
     from os.path import join, split
 if MP:
-    from multiprocessing import Process, Value, Array
+    from multiprocessing import Process, Value, Array, Pool, Queue, Lock
     
 import os
+import time as Time
 import random
 import numpy   as np
 import cPickle as cp
 
-class Math:    
+def e_sub_(queue, results, lock):
+    Continue = True
+    while Continue:
+        try:
+            #print("Reading from queue...")
+            ret = queue.get(True, 2)
+            if ret == "quit":
+                print("Got quit message")
+                Continue = False
+            else:
+                k = ret[0]
+                delay = k + 1
+                weight = ret[1][k]
+                results.put((weight * Math.e(ret[2] - ret[3] - delay)))
+                print weight
+                
+        except Exception:
+            pass
+
+
+def e_sub(k, time, spike, weights):
+    delay = k + 1
+    weight = weights[k]
+    return (weight * Math.e(time - spike - delay))
+        
+class Math:
     def e_(self, time):
         support_code = """#include <math.h> """
         """
@@ -58,8 +84,8 @@ class Math:
                       support_code = support_code,
                       libraries = ['m'],
                       )
-    
-    def e(self, time):
+    @staticmethod
+    def e(time):
         """
         >>> m = Math()
         >>> m.e(3)
@@ -116,6 +142,7 @@ class Math:
                include_dirs=['.'],
                )
         
+
     def _excitation(self, weights, spike, time):
         ## if time >= (spike + delay)
         ## delay_max = SYNAPSES
@@ -123,16 +150,37 @@ class Math:
         ## if time >= (spike + {1...16})
         ## so i need to find the minimum delay size and
         ## start the loop from there
+
         output = 0.0
 
-        i = int(time-spike)
+        #i = int(time-spike)
         #for k in xrange(i):
-        for k in xrange(SYNAPSES):
-            delay = k+1
-            weight = weights[k]
-            output += (weight * self.e(time - spike - delay))
+        
+        #start = Time.time()
+        #processes = [self.pool.apply_async(e_sub, args=(i, time, spike, weights)) for i in range(SYNAPSES)]
+        #results   = [x.get() for x in processes]
+        #summ = sum(results)
+        #end  = Time.time()
+        
+        #print "Threaded: ", end-start
+        #return summ
 
-        return output
+
+        #start = Time.time()
+        total = 0
+        for k in xrange(SYNAPSES):
+            self.queue.put([k, weights, spike, time])
+            total += self.results.get()
+            #delay = k+1
+            #weight = weights[k]
+            #output += (weight * self.e(time - spike - delay))
+
+            #time - spike - delay
+
+        #end = Time.time()
+        #print "Non-Threaded: ", end-start
+        
+        return total
 
     def excitation_derivative(self, weights, spike_time, time):
         output = 0.0
@@ -237,6 +285,7 @@ class neurons:
         self.time         = np.ndarray((neurons))
         self.desired_time = np.ndarray((neurons))
 
+        
     @property
     def size(self):
         return self.neurons
@@ -264,8 +313,9 @@ class layer:
 
         self._learning_rate = 1.0
 
-        self.weight_method = 'random1'
-
+        self.weight_method = 'normalized'
+        
+        
         if self.weight_method == 'random1':
             for i in xrange(self.prev.size):
                 for h in xrange(self.next.size):
@@ -314,7 +364,13 @@ class modular(Math):
 
         self.propagating_type = 'descent'
         self.propagating_routine = getattr(self, self.propagating_type + '_propagate')
-
+        #self.pool = Pool(2)
+        self.queue   = Queue()
+        self.results = Queue()
+        self.lock  = Lock()
+        self.e_workers = [Process(target=e_sub_, args=(self.queue, self.results, self.lock)) for i in range(16)]
+        [p.start() for p in self.e_workers]
+        
     @property
     def fail(self):
         return self.failed
