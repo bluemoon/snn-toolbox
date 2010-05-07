@@ -21,9 +21,12 @@ spikeprop_ng = Extension("snn_toolbox.ng",
                          ["old/ng.pyx","old/spike_prop_.c"],
                          include_dirs=includes)
 
+structure = Extension("snn_toolbox.structure",
+                         ["structure.pyx"],
+                         include_dirs=includes)
 
 
-ext = [spikeprop, spikeprop_ng, spikeprop_math]
+ext = [spikeprop, spikeprop_ng, spikeprop_math, structure]
     
 setup(
     name = 'spikeprop',

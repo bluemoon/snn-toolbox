@@ -1,6 +1,6 @@
+include "conf.pxi"
 import numpy as np
 import random
-from conf import *
 
 
 class neurons:
