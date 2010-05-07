@@ -16,7 +16,11 @@ spikeprop_ng = Extension("spikeprop_ng",
                          ["spikeprop_ng.pyx","spike_prop_.c"],
                          include_dirs=includes)
 
-ext = [spikeprop, spikeprop_ng]
+spikeprop_math = Extension("spikeprop_math",
+                         ["spikeprop_math.pyx","spike_prop_.c"],
+                         include_dirs=includes)
+
+ext = [spikeprop, spikeprop_ng, spikeprop_math]
     
 setup(
     name = 'spikeprop',

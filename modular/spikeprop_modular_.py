@@ -26,13 +26,14 @@ import time as Time
 import random
 import numpy   as np
 import cPickle as cp
+from spikeprop_math import *
 
-def e_sub_(queue, results, lock):
+def e_sub_(queue, result, lock):
     Continue = True
     while Continue:
         try:
             #print("Reading from queue...")
-            ret = queue.get(True, 2)
+            ret = queue.get(True, 1)
             if ret == "quit":
                 print("Got quit message")
                 Continue = False
@@ -40,8 +41,11 @@ def e_sub_(queue, results, lock):
                 k = ret[0]
                 delay = k + 1
                 weight = ret[1][k]
-                results.put((weight * Math.e(ret[2] - ret[3] - delay)))
-                print weight
+                
+                lock.acquire()
+                value = (weight * Math.e(ret[2] - ret[3] - delay))
+                result.value += value
+                lock.release()
                 
         except Exception:
             pass
@@ -52,230 +56,7 @@ def e_sub(k, time, spike, weights):
     weight = weights[k]
     return (weight * Math.e(time - spike - delay))
         
-class Math:
-    def e_(self, time):
-        support_code = """#include <math.h> """
-        """
-        PyObject *e   = PyFloat_FromDouble(2.718281828459045);
-        PyObject *one = PyFloat_FromDouble(1);
-        PyObject *seven = PyFloat_FromDouble(7);
-        PyObject *t1  = PyNumber_Subtract(time, one);
-        PyObject *t2  = PyNumber_Divide(t1, seven);
-        PyObject *t3  = PyNumber_Power(e, t1, Py_None);
-        PyObject *t4  = PyNumber_Multiply(time, t3);
-        return_val = PyNumber_Divide(t4, seven);
-        """
-        
-        code = """
-        //
-        
-        double t = py_to_float(time, "time");
-        if (t <= 0){
-            return_val = 0;
-        } else{
-            return_val = (t * pow(2.718281828459045, (1-t/7)))/7;
-        }
 
-        """
-        
-        return inline(code,
-                      ['time'],
-                      type_converters=converters.blitz,
-                      support_code = support_code,
-                      libraries = ['m'],
-                      )
-    @staticmethod
-    def e(time):
-        """
-        >>> m = Math()
-        >>> m.e(3)
-        0.75891212290587329
-        """
-    
-        if time > 0:
-            return (time * np.exp(1 - time * 0.142857143 )) * 0.142857143
-        else:
-            return 0
-
-    def sign(self, number):
-        if number > 0:
-            return 1
-        elif number < 0:
-            return -1
-        else:
-            return 0
-
-    def spike_response_derivative(self, time):
-        response = 0
-        if time <= 0:
-            return response
-        else:
-            return self.e(time) * ((1.0/time) - (1.0/DECAY))
-
-    def y(self, time, spike, delay):
-        return self.e(time - spike - delay)
-    
-    def excitation(self, weights, spike, time):
-        return self._excitation(weights, spike, time)
-    
-    def _excitation_weave(self, weights, spike, time):
-        code = """
-        double total = 0;
-        double t, s;
-        t = py_to_float(time, "time");
-        s = py_to_float(spike, "spike");
-        
-        int rows = Nweights[0];
-        int col  = Nweights[1];
-        
-        for (int i=0; i < rows; i++){
-          for(int j=0; j < col; j++){
-            int delay = i + 1;
-            total += weights(i, j) * e(t - s - delay);
-            }
-        }
-        return_val = total;
-        """
-        inline(code, ['weights', 'spike', 'time'],
-               type_converters=converters.blitz,
-               support_code=open(join(split(__file__)[0],'spike_prop_.c')).read(),
-               include_dirs=['.'],
-               )
-        
-
-    def _excitation(self, weights, spike, time):
-        ## if time >= (spike + delay)
-        ## delay_max = SYNAPSES
-        ## the delay is 1...16
-        ## if time >= (spike + {1...16})
-        ## so i need to find the minimum delay size and
-        ## start the loop from there
-
-        output = 0.0
-
-        #i = int(time-spike)
-        #for k in xrange(i):
-        
-        #start = Time.time()
-        #processes = [self.pool.apply_async(e_sub, args=(i, time, spike, weights)) for i in range(SYNAPSES)]
-        #results   = [x.get() for x in processes]
-        #summ = sum(results)
-        #end  = Time.time()
-        
-        #print "Threaded: ", end-start
-        #return summ
-
-
-        #start = Time.time()
-        total = 0
-        for k in xrange(SYNAPSES):
-            self.queue.put([k, weights, spike, time])
-            total += self.results.get()
-            #delay = k+1
-            #weight = weights[k]
-            #output += (weight * self.e(time - spike - delay))
-
-            #time - spike - delay
-
-        #end = Time.time()
-        #print "Non-Threaded: ", end-start
-        
-        return total
-
-    def excitation_derivative(self, weights, spike_time, time):
-        output = 0.0
-        if time >= spike_time:
-            for k in xrange(SYNAPSES):
-                weight = weights[k]
-                delay  = k + 1
-                ## will fire when current time 
-                ## (timeT) >= time of spike + delay otherwise zero
-                if time >= (spike_time + delay):
-                    output += (weight * self.spike_response_derivative((time - delay - spike_time)))
-                    ## else no charge
-                    
-        return output
-
-    def delta_j(self, j):
-        delta_j_top = self.output_layer.next.desired_time[j] - self.output_layer.next.time[j]
-        return delta_j_top / self.delta_j_bottom(j)
-
-    def delta_j_bottom(self, j):
-        ot = 0.0
-        for i in range(self.layer.prev.size):
-            e_derivative =  self.excitation_derivative(self.layer.weights[i, j], 
-                            self.layer.prev.time[i], 
-                            self.layer.next.time[j])
-
-            if i >= (self.layer.prev.size - IPSP):
-                ot -= e_derivative
-            else:
-                ot += e_derivative
-
-        return ot
- 
-    def delta_i_top(self, i):
-        ## the top of equation 17 is from i to j
-        ## so in our case it would be from the current layer
-        ## (self.layer.prev to self.layer.next)
-        
-        ot     = 0.0
-        actual = 0.0
-        
-        next_layer = self.layers[self.layer_idx+1]
-        spike_time = next_layer.prev.time[i]
-        for j in xrange(next_layer.next.size):
-            actual_time = next_layer.next.time[j]
-            delta = next_layer.deltas[j]
-            excitation_d = self.excitation_derivative(next_layer.weights[i, j], spike_time, actual_time)
-            if i >= (next_layer.prev.size - IPSP):
-                ot = -excitation_d
-            else:
-                ot = excitation_d
-                
-            actual += (delta * ot)
-
-        return actual
-    
-    def delta_i_bottom(self, i):
-        ## the bottom of equation 17 is from h to i
-        actual = 0.0
-        actual_time = self.layer.next.time[i]
-        for h in xrange(self.layer.prev.size):
-            spike_time = self.layer.prev.time[h]
-            ot = self.excitation_derivative(self.layer.weights[h, i], spike_time, actual_time)
-            actual += ot
-        
-        if i >= (self.layer.next.size - IPSP):
-            return -actual
-        else:
-            return actual
-
-    def delta_i(self, i):
-        ## this equation works as follows
-        ## we go from i to j in the top equation
-        ## we go from h to i in the bottom equation
-        ## so we need to go from the current layer
-        ##   self.layer.prev as h to self.layer.next as i
-        ## and then
-        ##   self.layer.next as i to self.layers[self.layer_idx+1].prev as j
-        ##
-        ## so if  layer[0].prev = 3 which would be h
-        ## then   layer[0].next = 5 which would be i
-        ## and    layer[1].prev = 5 which would also be i
-        ## lastly layer[1].next = 1 which would be j
-
-        actual = self.delta_i_top(i)/self.delta_i_bottom(i)
-        return actual
-            
-
-    def change(self, actual_time, spike_time, delay, delta):
-        #print -self.layer.learning_rate * delta * self.y(actual_time, spike_time, delay) 
-        return (-self.layer.learning_rate * self.y(actual_time, spike_time, delay) * delta)
-
-    def error_weight_derivative(self, actual_time, spike_time, delay, delta):
-        return self.y(actual_time, spike_time, delay) * delta
-    
 class neurons:
     time = None
     desired_time = None
@@ -313,7 +94,7 @@ class layer:
 
         self._learning_rate = 1.0
 
-        self.weight_method = 'normalized'
+        self.weight_method = 'random1'
         
         
         if self.weight_method == 'random1':
@@ -365,11 +146,12 @@ class modular(Math):
         self.propagating_type = 'descent'
         self.propagating_routine = getattr(self, self.propagating_type + '_propagate')
         #self.pool = Pool(2)
-        self.queue   = Queue()
-        self.results = Queue()
-        self.lock  = Lock()
-        self.e_workers = [Process(target=e_sub_, args=(self.queue, self.results, self.lock)) for i in range(16)]
-        [p.start() for p in self.e_workers]
+        #self.queue   = Queue()
+        #self.results = Queue()
+        #self.lock  = Lock()
+        #self.shared_result = Value('d', 0)
+        #self.e_workers = [Process(target=e_sub_, args=(self.queue, self.shared_result, self.lock)) for i in range(4)]
+        #[p.start() for p in self.e_workers]
         
     @property
     def fail(self):
@@ -449,6 +231,7 @@ class modular(Math):
             for i in xrange(self.layer.next.size):
                 self.layer.deltas[i] = self.delta_i(i)
                 
+    @profile   
     def backwards_pass(self, input_times, desired_times):
         self.forward_pass(input_times, desired_times)
         if self.fail:
@@ -513,7 +296,7 @@ class modular(Math):
 
         return self.error
     
-
+    @profile
     def forward_pass(self, input_times, desired_times):
         ## The first layer will be the furthest most left
         ## and the last layer will be the furthest most right
