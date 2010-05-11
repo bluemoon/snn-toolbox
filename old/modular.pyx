@@ -1,10 +1,12 @@
 # encoding: utf-8
-#include "conf.pxi"
-# cython: profile=True
+# cython: profile=False
 # cython: boundscheck=False
 # cython: wraparound=False
-# cython: infer_types=True
+# cython: infer_types=False
 
+cdef extern from "spike_prop.h" nogil:
+    double c_e "e"(double)
+    
 DEF WEAVE       = False
 DEF MP          = False
 DEF DECAY       = 7
@@ -22,13 +24,12 @@ cimport numpy as np
 import  numpy as np
 cimport python as py
 cimport cython as cy
-#from Math       cimport *
-#from Math       import *
+
 cimport Math
-import  Math
-from base       import *
-from structure  import *
-from debug      import *
+import  snn_toolbox.old.Math as Math
+
+from spikeprop_types  import  *
+
 
 IF WEAVE:
     from scipy.weave import *
@@ -47,6 +48,7 @@ import cPickle as cp
 
 ## Checklist
 ##  [ ]Excitation
+
 
 cdef class modular(Math.Math):
     ## H (input), I (hidden) and J (output)
@@ -68,7 +70,9 @@ cdef class modular(Math.Math):
     ## ∂w.ij^k
     ##
     cdef int layer_length
-    def __init__(self, layers):
+    cdef bint last
+    
+    def __init__(self, list layers):
         self.layers    = layers
         self.threshold = 50
         self.failed    = False
@@ -81,7 +85,7 @@ cdef class modular(Math.Math):
         #self.propagating_type = 'descent'
         #self.propagating_routine = getattr(self, self.propagating_type + '_propagate')
         self.layer_length = len(self.layers)
-        self.propagating_routine = self.descent_propagate
+        #self.propagating_routine = self.descent_propagate
         
     property fail:
         def __get__(self):
@@ -118,6 +122,8 @@ cdef class modular(Math.Math):
             return False
             
     cpdef double quickprop_propagate(self, int i, int j, int k, double actual, double spike, int delay, double delta):
+    #cpdef double quickprop_propagate(self, sPropagate prop):
+
         cdef next_step = 0.0
         mu = 2.0
         shrink = mu /(1.0 + mu)
@@ -133,38 +139,16 @@ cdef class modular(Math.Math):
         d =  self.layer.derive_delta[i,j,k]
         p =  double_prime
         s =  prime + (decay * weight)
-        """
-        if d < 0.0:
-            if s > 0.0:
-                next_step -= self.layer.learning_rate * s
-            if s >= (shrink * p):
-                next_step += delta * d
-            else:
-                next_step += d * s / (p - s)
-        elif d > 0.0:
-            if s < 0.0:
-                next_step -= self.layer.learning_rate * s
-            if s <= (shrink * p):
-                next_step += delta * d
-            else:
-                next_step += d * s / (p - s)
-
-        else:
-            next_step -= self.layer.learning_rate * s
-            """
-        #if self.sign(prime) == self.sign(<int>delta):
-        #   
-        #else:
-        #if d == 0.0:
-        #    next_step =  -self.layer.learning_rate * prime + (self.layer.derive_delta[i,j,k])
-        #else:
-        #    next_step = self.layer.derive_delta[i, j, k]  * (prime / (double_prime - prime))
 
         self.layer.derive_delta[i, j, k] = next_step
         self.layer.derivative[i, j, k]   = prime
         return next_step
 
-    cpdef double descent_propagate(self, int i, int j, int k, double actual, double spike, int delay, double delta):
+    cdef double descent_propagate(self, int i, int j, int k, double actual, double spike, int delay, double delta):
+        ## 1) ncalls: 225280 tottime: 0.360 per: 0.000001598
+        ## 2) ncalls: 304640 tottime: 0.489 per: 0.000001605
+        cdef int layer, m
+        cdef double delta_weight
         if not self.last_layer():
             layer = self.layer.next.size
             m = j
@@ -172,11 +156,12 @@ cdef class modular(Math.Math):
             layer = self.layer.prev.size
             m = i
 
+        delta_weight = (-self.layer.learning_rate * c_e(actual - spike -delay) * delta)
         if m >= (layer - IPSP):
             #debug("IPSP Call: neuron: %d layer: %d layer size: %d" % (m, self.layer_idx, layer))
-            delta_weight = -self.change(actual, spike, delay, delta)
-        else:
-            delta_weight = self.change(actual, spike, delay, delta)
+            #delta_weight = -self.change(actual, spike, delay, delta)
+            delta_weight = -delta_weight
+
     
         return delta_weight
 
@@ -199,7 +184,12 @@ cdef class modular(Math.Math):
                 
 
     cpdef backwards_pass(self, np.ndarray input_times, np.ndarray desired_times):
-        cdef int j, i, k
+        cdef int j, i, k, layer_idx, idx
+        cdef int prev_size, next_size
+        cdef np.npy_intp *strides
+        cdef double *old, *weights
+        cdef np.ndarray w
+        cdef object layer
         self.forward_pass(input_times, desired_times)
         if self.fail:
             return False
@@ -208,10 +198,15 @@ cdef class modular(Math.Math):
         self._delta_i()
         ## Go through every layer backwards
         ## doing the following steps:
-        for layer_idx in xrange(self.layer_length-1, -1, -1):
+        #for layer_idx in xrange(self.layer_length-1, -1, -1):
+        
+        for layer_idx from self.layer_length-1 >= layer_idx > -1:
             ##  1) figure out what layer we are on
-            self.layer_idx = layer_idx
-            self.layer = self.layers[self.layer_idx]
+            idx = layer_idx
+            layer = self.layers[idx]
+            self.layer = layer
+            self.last = self.last_layer()
+
             ##  2) calculate the delta j or delta i depending on the 
             ##     previous step, if this is the last layer we use
             ##     equation 12, if this is input -> hidden, or hidden to hidden
@@ -221,32 +216,38 @@ cdef class modular(Math.Math):
             ##     get the time(actual_time), then go through all the 
             ##     neurons in the previous set(i)
             ##     and get the previously calculated delta
+            prev = self.layer.prev
+            next = self.layer.next
 
-            for j in xrange(self.layer.next.size):
-                actual_time = self.layer.next.time[j]
-                delta = self.layer.deltas[j]
-                for i in xrange(self.layer.prev.size):
+            prev_size = prev.size
+            next_size = next.size
+            
+            weights = <double *>(<np.ndarray>layer.weights).data
+            strides = np.PyArray_STRIDES(layer.weights)
+            
+            for j in xrange(next_size):
+                actual_time = next.time[j]
+                delta = layer.deltas[j]
+                for i in xrange(prev_size):
                     ## 4) from there we go through all the synapses(k)
-                    spike_time = self.layer.prev.time[i]
+                    spike_time = prev.time[i]
                     for k in xrange(SYNAPSES):
                         ## 5) we then get the spike time of the last layer(spike_time)
                         ##    get the last weight(old_weight) and if we are on the last
                         ##    layer
                         delay = k + 1
-                        old_weight = self.layer.weights[i, j, k]
-                        delta_weight = self.propagating_routine(i, j, k, actual_time, spike_time, delay, delta)                        
-
+                        old_weight = (<double *>np.PyArray_GETPTR3(layer.weights, i, j, k))[0]
+                        delta_weight = self.descent_propagate(i, j, k, actual_time, spike_time, delay, delta)                        
                         new_weight = old_weight + delta_weight
-                        #new_weight = corefunc.add(old_weight, delta_weight)
-                        
-                        if self.neg_weights():
+                        IF NEG_WEIGHTS:
                             self.layer.weights[i, j, k] = new_weight
-                        else:
+                        ELSE:
                             if new_weight >= 0.0:
-                                self.layer.weights[i, j, k] = new_weight
+                                layer.weights[i, j, k] = new_weight
                             else:
-                                self.layer.weights[i, j, k] = 0.0
-
+                                layer.weights[i, j, k] = 0.0
+                                
+        self.layer = layer
         return self.error()
     
 
@@ -256,26 +257,28 @@ cdef class modular(Math.Math):
         ## 0 and -1 respectively
         self.input_layer.prev.time           = input_times
         self.output_layer.next.desired_time  = desired_times
-        cdef int h, i, k
+        cdef int h, i, k, z, delay
         cdef int layer_idx
         cdef double time  = 0
         cdef double total = 0
         cdef double ot = 0
-        cdef double spike_time, t2
+        cdef double spike_time, t2, weight, q
         cdef int next_size
         cdef int prev_size
-        cdef double *prev_time, *next_time
-        cdef np.ndarray prev_array, next_array
+        cdef double *prev_time, *next_time, *weights
+        cdef np.ndarray prev_array, next_array, layer_weights
         
         for layer_idx in xrange(self.layer_length):
             self.layer = self.layers[layer_idx]
             self.layer_idx = layer_idx
+            #self.last = self.last_layer()
+            prev = self.layer.prev
+            next = self.layer.next
+            prev_size = prev.size
+            next_size = next.size
 
-            prev_size = self.layer.prev.size
-            next_size = self.layer.next.size
-
-            prev_array = <np.ndarray>self.layer.prev.time
-            next_array = <np.ndarray>self.layer.next.time
+            prev_array = <np.ndarray>prev.time
+            next_array = <np.ndarray>next.time
             
             prev_time = <double *>prev_array.data
             next_time = <double *>next_array.data
@@ -288,7 +291,7 @@ cdef class modular(Math.Math):
             ## passes the threshold value which is calculated with 
             ## spikeprop_math.linkout but because we are a subclass of it
             ## it can be accessed through self
-
+            layer_weights = <np.ndarray>self.layer.weights
             for i in range(next_size):
                 total = 0
                 time  = 0
@@ -298,7 +301,14 @@ cdef class modular(Math.Math):
                         spike_time = prev_time[h]
                         ## when the time is past the spike time
                         if time >= spike_time:
-                            ot = self.excitation(self.layer.weights[h, i], spike_time, time)
+                            weights = <double *>np.PyArray_GETPTR2(layer_weights, h, i)
+                            z = int(time-spike_time)
+                            ot = 0
+                            for k from 0 <= k < z:
+                                delay = k + 1
+                                weight = weights[k]
+                                ot += (weight * c_e(time-spike_time-delay))
+
                             if self.last_layer():
                                 if h >= (prev_size - IPSP):
                                     total -= ot
@@ -323,7 +333,7 @@ cdef class modular(Math.Math):
         last_layer = self.layers[-1]
         total = 0.0
         for j in range(last_layer.next.size):
-            total += (last_layer.next.time[j] - last_layer.next.desired_time[j]) ** 2.0
+            total += pow((last_layer.next.time[j] - last_layer.next.desired_time[j]), 2.0, None)
             
         return (total/2.0)
 

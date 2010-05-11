@@ -33,8 +33,6 @@ cdef extern from "stdlib.h" nogil:
     int    c_srand "srand" (int)
     double c_fmod  "fmod" (double, double)
     
-
-
 cdef class Math:
     cdef double e(self, double time):
         return c_e(time)
@@ -65,8 +63,8 @@ cdef class Math:
     cdef double y(self, double time, double spike, double delay):
         return c_e(time - spike - delay)
     
-    cdef double excitation(self, double *weights, double spike, double time):
-        #cdef double *p = <double *>weights.data
+    cdef double excitation(self, np.ndarray weights, double spike, double time):
+        cdef double *p = <double *>weights.data
         cdef double weight, output = 0.0
         cdef int k, i, delay
         ## if time >= (spike + delay)
@@ -79,7 +77,7 @@ cdef class Math:
         i = int(time-spike)
         for k from 0 <= k < i:
             delay = k+1
-            weight = weights[k]
+            weight = p[k]
             output += (weight * c_e(time-spike-delay))
 
         return output

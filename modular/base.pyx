@@ -3,11 +3,11 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 # cython: infer_types=True
-include "conf.pxi"
+
+include "misc/conf.pxi"
 cimport numpy as np
 import  numpy as np
 import  random
-
 cdef class neurons_base:
     def __init__(self, neurons):
         self.size         = neurons
@@ -30,7 +30,7 @@ cdef class layer_base:
         self.derivative   = np.random.rand(*shape)
         self.weight_delta = np.random.rand(*shape)
         self.learning_rate = 1.0
-
+        self.threshold = 50
         self.weight_method = 'random2'
         
         if self.weight_method == 'random1':
@@ -51,13 +51,13 @@ cdef class layer_base:
             mu, sigma = 1, 0.11
             self.weights = np.random.normal(mu, sigma, size=(previous, next, SYNAPSES))
             
-    cdef void forward_implementation(self):
+    cpdef forward_implementation(self):
         pass
     
     cdef void backward_implementation(self):
         pass
-    
-    cdef void forward(self):
+     
+    cpdef forward(self):
         self.forward_implementation()
         
     cdef void backward(self):
@@ -69,12 +69,14 @@ cdef class layer_base:
     
 cdef class network_base:
     def __init__(self, layers):
-        self.layers = layers
+        self.layers = <list>layers
         self.layer_length = len(self.layers)
         self.input_layer  = layers[0]
-        self.output_layer = layers[-1]
+        self.output_layer = layers[-1] 
+        self.failed = False
+        self.layer = None
         
-    cdef inline bint last_layer(self):
+    cdef bint last_layer(self):
         cdef bint last_layer
         if self.layer_idx == (self.layer_length - 1):
             last_layer = True
@@ -85,7 +87,7 @@ cdef class network_base:
 
     cdef bint first_layer(self):
         cdef bint first_layer
-        if self.layer_idx == 0:
+        if self.layer_idx == 0: 
             first_layer = True
         else:
             first_layer = False
@@ -106,5 +108,3 @@ cdef class network_base:
             
         return (total/2.0)
         
-    cdef forward_pass(self, np.ndarray input, np.ndarray desired):
-        pass
