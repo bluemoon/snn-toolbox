@@ -14,9 +14,6 @@ cdef class neurons_base:
         self.time         = np.ndarray((neurons))
         self.desired_time = np.ndarray((neurons))
 
-    #cpdef inline int size(self):
-    #    return self.neurons
-    
 cdef class layer_base:
     def __init__(self, previous_neurons, next_neurons, shape): 
         previous = previous_neurons.size
@@ -24,6 +21,10 @@ cdef class layer_base:
 
         self.prev  = previous_neurons
         self.next  = next_neurons
+
+        self.prev_dim = previous
+        self.next_dim = next
+        
         self.weights = np.random.rand(*shape) * 10.0
         self.deltas  = np.ndarray((next))
         self.derivative   = np.random.rand(*shape)
@@ -49,9 +50,61 @@ cdef class layer_base:
         elif self.weight_method == 'normalized':
             mu, sigma = 1, 0.11
             self.weights = np.random.normal(mu, sigma, size=(previous, next, SYNAPSES))
-
-
+            
+    cdef void forward_implementation(self):
+        pass
+    
+    cdef void backward_implementation(self):
+        pass
+    
+    cdef void forward(self):
+        self.forward_implementation()
+        
+    cdef void backward(self):
+        self.backward_implementation()
+    
+    cdef void activate(self, np.ndarray input):
+        pass
+    
+    
 cdef class network_base:
     def __init__(self, layers):
         self.layers = layers
+        self.layer_length = len(self.layers)
+        self.input_layer  = layers[0]
+        self.output_layer = layers[-1]
         
+    cdef inline bint last_layer(self):
+        cdef bint last_layer
+        if self.layer_idx == (self.layer_length - 1):
+            last_layer = True
+        else:
+            last_layer = False
+
+        return last_layer
+
+    cdef bint first_layer(self):
+        cdef bint first_layer
+        if self.layer_idx == 0:
+            first_layer = True
+        else:
+            first_layer = False
+        return first_layer
+
+    cdef bint hidden_layer(self):
+        if not self.first_layer() and not self.last_layer():
+            return True
+        else:
+            return False
+            
+    cdef double error(self):
+        cdef int j
+        cdef object last_layer = self.layers[-1]
+        cdef double total = 0.0
+        for j in range(last_layer.next.size):
+            total += (last_layer.next.time[j] - last_layer.next.desired_time[j]) ** 2.0
+            
+        return (total/2.0)
+        
+    cdef forward_pass(self, np.ndarray input, np.ndarray desired):
+        pass

@@ -9,3 +9,6 @@ DEF NEG_WEIGHTS = False
 
 DEF QUICKPROP   = False
 DEF RPROP       = False
+
+cdef extern from "spike_prop.h" nogil:
+    double c_e "e"(double)

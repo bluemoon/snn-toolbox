@@ -17,11 +17,11 @@ cdef extern from "stdlib.h" nogil:
 
 
 cdef class Math:
-    cdef object layers
+    cdef list layers
     cdef object output_layer
     cdef object input_layer
     cdef object propagating_type
-    cdef object propagating_routine
+    #cdef void propagating_routine
     cdef int threshold
     cdef bint failed
     cdef object layer

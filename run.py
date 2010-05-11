@@ -1,12 +1,8 @@
 from optparse import OptionParser
-#import matplotlib.pyplot as plt
-#import spikeprop
 import pstats
 import cProfile
 import numpy as np
 import profile
-
-
 
 parser = OptionParser()
 parser.add_option("-d", "--debug", dest="debug", action="store_true")
@@ -37,7 +33,7 @@ t = 'from_python'
 
 from snn_toolbox.ng      import *
 from snn_toolbox.modular import *
-from snn_toolbox.base    import *
+from snn_toolbox.spikeprop_network import *
 
 
 prop = spikeprop_faster(3, 5, 1)
@@ -58,7 +54,7 @@ def run_modular():
     output = layer(h, o)
 
     prop = modular([input, output])
-    
+    prop2 = modular2([input, output])
     x = 0
     iterations = 1000
     total_error = 10
