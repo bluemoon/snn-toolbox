@@ -26,7 +26,7 @@ cimport cython as cy
 #from Math       import *
 cimport Math
 import  Math
-
+from base       import *
 from structure  import *
 from debug      import *
 
@@ -47,7 +47,6 @@ import cPickle as cp
 
 ## Checklist
 ##  [ ]Excitation
-
 
 cdef class modular(Math.Math):
     ## H (input), I (hidden) and J (output)
@@ -161,17 +160,16 @@ cdef class modular(Math.Math):
         #else:
         #    next_step = self.layer.derive_delta[i, j, k]  * (prime / (double_prime - prime))
 
-        print next_step
         self.layer.derive_delta[i, j, k] = next_step
         self.layer.derivative[i, j, k]   = prime
         return next_step
 
     cpdef double descent_propagate(self, int i, int j, int k, double actual, double spike, int delay, double delta):
         if not self.last_layer():
-            layer = self.layer.next.size()
+            layer = self.layer.next.size
             m = j
         else:
-            layer = self.layer.prev.size()
+            layer = self.layer.prev.size
             m = i
 
         if m >= (layer - IPSP):
@@ -187,7 +185,7 @@ cdef class modular(Math.Math):
         
         self.layer = self.layers[-1]
         self.layer_idx = self.layer_length-1
-        for j in xrange(self.layer.next.size()):
+        for j in xrange(self.layer.next.size):
             self.layer.deltas[j] = self.delta_j(j)
             
     cdef void _delta_i(self):
@@ -196,7 +194,7 @@ cdef class modular(Math.Math):
             self.layer_idx = layer_idx
             self.layer = self.layers[self.layer_idx]
             if not self.last_layer():
-                for i in xrange(self.layer.next.size()):
+                for i in xrange(self.layer.next.size):
                     self.layer.deltas[i] = self.delta_i(i)
                 
 
@@ -224,10 +222,10 @@ cdef class modular(Math.Math):
             ##     neurons in the previous set(i)
             ##     and get the previously calculated delta
 
-            for j in xrange(self.layer.next.size()):
+            for j in xrange(self.layer.next.size):
                 actual_time = self.layer.next.time[j]
                 delta = self.layer.deltas[j]
-                for i in xrange(self.layer.prev.size()):
+                for i in xrange(self.layer.prev.size):
                     ## 4) from there we go through all the synapses(k)
                     spike_time = self.layer.prev.time[i]
                     for k in xrange(SYNAPSES):
@@ -273,8 +271,8 @@ cdef class modular(Math.Math):
             self.layer = self.layers[layer_idx]
             self.layer_idx = layer_idx
 
-            prev_size = self.layer.prev.size()
-            next_size = self.layer.next.size()
+            prev_size = self.layer.prev.size
+            next_size = self.layer.next.size
 
             prev_array = <np.ndarray>self.layer.prev.time
             next_array = <np.ndarray>self.layer.next.time
@@ -303,7 +301,6 @@ cdef class modular(Math.Math):
                             ot = self.excitation(self.layer.weights[h, i], spike_time, time)
                             if self.last_layer():
                                 if h >= (prev_size - IPSP):
-                                    #debug("IPSP Call: neuron: %d layer: %d layer size: %d" % (h, self.layer_idx, self.layer.prev.size))
                                     total -= ot
                                 else:
                                     total += ot
@@ -325,7 +322,7 @@ cdef class modular(Math.Math):
     cpdef error(self):
         last_layer = self.layers[-1]
         total = 0.0
-        for j in range(last_layer.next.size()):
+        for j in range(last_layer.next.size):
             total += (last_layer.next.time[j] - last_layer.next.desired_time[j]) ** 2.0
             
         return (total/2.0)

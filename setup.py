@@ -1,5 +1,7 @@
-from distutils.core import setup
-from distutils.extension import Extension
+#from distutils.core import setup
+#from distutils.extension import Extension
+from setuptools import setup, Extension
+
 from Cython.Distutils import build_ext
 
 includes = [
@@ -9,24 +11,29 @@ includes = [
     ]
     
 spikeprop_math = Extension("snn_toolbox.Math",
-                         ["Math.pyx","old/spike_prop_.c"],
+                         ["Math.pyx","spike_prop_.c"],
                          include_dirs=includes)
 
 spikeprop = Extension("snn_toolbox.modular",
-                      ["modular.pyx","old/spike_prop_.c"],
+                      ["modular.pyx","spike_prop_.c"],
                       include_dirs=includes,
                       #libraries=['profiler'],
                       )
 spikeprop_ng = Extension("snn_toolbox.ng",
-                         ["old/ng.pyx","old/spike_prop_.c"],
+                         ["ng.pyx","spike_prop_.c"],
                          include_dirs=includes)
 
-structure = Extension("snn_toolbox.structure",
-                         ["structure.pyx"],
+base = Extension("snn_toolbox.base",
+                         ["base.pyx"],
+                         include_dirs=includes)
+
+structure = Extension("snn_toolbox.spikeprop_types",
+                         ["spikeprop_types.pyx"],
                          include_dirs=includes)
 
 
-ext = [spikeprop, spikeprop_ng, spikeprop_math, structure]
+
+ext = [spikeprop, spikeprop_ng, spikeprop_math, structure, base]
     
 setup(
     name = 'spikeprop',
@@ -34,5 +41,5 @@ setup(
     ext_modules = ext,
     packages=['snn_toolbox'],
     package_dir={'snn_toolbox': '.'},
-    version='0.0.1d',
+    version='0.0.1e',
 )

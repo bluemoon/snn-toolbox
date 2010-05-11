@@ -1,4 +1,4 @@
-# cython: profile=True
+# cython: profile=False
 # cython: boundscheck=False
 # cython: wraparound=False
 # cython: infer_types=True
@@ -19,7 +19,6 @@ DEF RPROP       = False
 cimport cython as cy
 import numpy as np
 cimport numpy  as np
-from debug  import *
 
 cdef extern from "math.h" nogil:
     double c_exp "exp" (double)
@@ -66,8 +65,8 @@ cdef class Math:
     cdef double y(self, double time, double spike, double delay):
         return c_e(time - spike - delay)
     
-    cdef double excitation(self, np.ndarray weights, double spike, double time):
-        cdef double *p = <double *>weights.data
+    cdef double excitation(self, double *weights, double spike, double time):
+        #cdef double *p = <double *>weights.data
         cdef double weight, output = 0.0
         cdef int k, i, delay
         ## if time >= (spike + delay)
@@ -80,7 +79,7 @@ cdef class Math:
         i = int(time-spike)
         for k from 0 <= k < i:
             delay = k+1
-            weight = p[k]
+            weight = weights[k]
             output += (weight * c_e(time-spike-delay))
 
         return output
@@ -146,12 +145,12 @@ cdef class Math:
     cdef delta_j_bottom(self, int j):
         #assert self.last_layer
         ot = 0.0
-        for i in range(self.layer.prev.size()):
+        for i in range(self.layer.prev.size):
             e_derivative =  self.excitation_derivative(self.layer.weights[i, j], 
                             self.layer.prev.time[i], 
                             self.layer.next.time[j])
 
-            if i >= (self.layer.prev.size() - IPSP):
+            if i >= (self.layer.prev.size - IPSP):
                 #debug("IPSP Call: neuron: %d layer: %d layer size: %d" % (i, self.layer_idx, self.layer.prev.size))
                 ot -= e_derivative
             else:
@@ -170,11 +169,11 @@ cdef class Math:
         
         next_layer = self.layers[self.layer_idx+1]
         spike_time = next_layer.prev.time[i]
-        for j in xrange(next_layer.next.size()):
+        for j in xrange(next_layer.next.size):
             actual_time = next_layer.next.time[j]
             delta = next_layer.deltas[j]
             excitation_d = self.excitation_derivative(next_layer.weights[i, j], spike_time, actual_time)
-            if i >= (self.layer.next.size() - IPSP):
+            if i >= (self.layer.next.size - IPSP):
                 #debug("IPSP Call: neuron: %d layer: %d layer size: %d" % (i, self.layer_idx, self.layer.next.size))
                 ot = -excitation_d
             else:
@@ -188,12 +187,12 @@ cdef class Math:
         ## the bottom of equation 17 is from h to i
         actual = 0.0
         actual_time = self.layer.next.time[i]
-        for h in xrange(self.layer.prev.size()):
+        for h in xrange(self.layer.prev.size):
             spike_time = self.layer.prev.time[h]
             ot = self.excitation_derivative(self.layer.weights[h, i], spike_time, actual_time)
             actual += ot
         
-        if i >= (self.layer.next.size() - IPSP):
+        if i >= (self.layer.next.size - IPSP):
             #debug("IPSP Call: neuron: %d layer: %d layer size: %d" % (i, self.layer_idx, self.layer.next.size))
             return -actual
         else:

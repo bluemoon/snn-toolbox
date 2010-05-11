@@ -37,6 +37,8 @@ t = 'from_python'
 
 from snn_toolbox.ng      import *
 from snn_toolbox.modular import *
+from snn_toolbox.base    import *
+
 
 prop = spikeprop_faster(3, 5, 1)
 prop.initialise_weights()
