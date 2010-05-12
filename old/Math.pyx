@@ -16,7 +16,6 @@ DEF QUICKPROP   = False
 DEF RPROP       = False
 
 
-cimport cython as cy
 import numpy as np
 cimport numpy  as np
 

@@ -14,7 +14,7 @@ from spikeprop  cimport *
 import  numpy  as np
 import cPickle as cp
 cimport numpy  as np
-cimport cython as cy
+#cimport cython as cy
 cimport python as py
 
 ## V is a set of spiking neurons
@@ -52,7 +52,7 @@ cdef int sign(num):
     else:
         return 0
     
-@cy.cdivision(True)
+#@cy.cdivision(True)
 cdef double srfd(double time) nogil:
     cdef double asrfd = 0
     if time <= 0:
@@ -72,7 +72,7 @@ cpdef double srfd_(double time):
 cpdef double y_(double time, double spike, int delay):
     return y(time, spike, delay)
 
-@cy.boundscheck(False)
+#@cy.boundscheck(False)
 cdef double link_out(self, np.ndarray weights, double spike, double time):
     cdef double *p = <double *>weights.data
     cdef double weight, output = 0.0
@@ -190,7 +190,7 @@ cdef class spikeprop_faster:
    # cdef _weight_minmax(self, inputs, time):
     #    return (DECAY*self.threshold)/(SYNAPSES*inputs*time)*c_exp((time/DECAY)-1.0)
         
-    @cy.boundscheck(False)
+    #@cy.boundscheck(False)
     cpdef double link_out(self, np.ndarray weights, double spike, double time):
         cdef double *p = <double *>weights.data
         cdef double weight, output = 0.0

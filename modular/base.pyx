@@ -4,10 +4,13 @@
 # cython: wraparound=False
 # cython: infer_types=True
 
-include "misc/conf.pxi"
+include "../misc/conf.pxi"
+
 cimport numpy as np
 import  numpy as np
+
 import  random
+
 cdef class neurons_base:
     def __init__(self, neurons):
         self.size         = neurons
@@ -15,9 +18,9 @@ cdef class neurons_base:
         self.desired_time = np.ndarray((neurons))
 
 cdef class layer_base:
-    def __init__(self, previous_neurons, next_neurons, shape): 
-        previous = previous_neurons.size
-        next     = next_neurons.size
+    def __init__(self, object previous_neurons, object next_neurons, tuple shape): 
+        cdef int previous = previous_neurons.size
+        cdef int next     = next_neurons.size
 
         self.prev  = previous_neurons
         self.next  = next_neurons
@@ -25,10 +28,10 @@ cdef class layer_base:
         self.prev_dim = previous
         self.next_dim = next
         
-        self.weights = np.random.rand(*shape) * 10.0
+        self.weights = np.zeros(shape)#np.random.rand(shape) * 10.0
         self.deltas  = np.ndarray((next))
-        self.derivative   = np.random.rand(*shape)
-        self.weight_delta = np.random.rand(*shape)
+        self.derivative   = np.zeros(shape) #np.random.rand(shape)
+        self.weight_delta = np.zeros(shape) #np.random.rand(shape)
         self.learning_rate = 1.0
         self.threshold = 50
         self.weight_method = 'random2'
@@ -54,29 +57,29 @@ cdef class layer_base:
     cpdef forward_implementation(self):
         pass
     
-    cdef void backward_implementation(self):
+    cpdef backward_implementation(self):
         pass
      
     cpdef forward(self):
         self.forward_implementation()
         
-    cdef void backward(self):
+    cpdef backward(self):
         self.backward_implementation()
     
-    cdef void activate(self, np.ndarray input):
+    cpdef activate(self, np.ndarray input):
         pass
     
     
 cdef class network_base:
     def __init__(self, layers):
-        self.layers = <list>layers
+        self.layers = layers
         self.layer_length = len(self.layers)
         self.input_layer  = layers[0]
         self.output_layer = layers[-1] 
         self.failed = False
         self.layer = None
         
-    cdef bint last_layer(self):
+    cpdef bint last_layer(self):
         cdef bint last_layer
         if self.layer_idx == (self.layer_length - 1):
             last_layer = True
@@ -99,7 +102,7 @@ cdef class network_base:
         else:
             return False
             
-    cdef double error(self):
+    cpdef error(self):
         cdef int j
         cdef object last_layer = self.layers[-1]
         cdef double total = 0.0
@@ -107,4 +110,10 @@ cdef class network_base:
             total += (last_layer.next.time[j] - last_layer.next.desired_time[j]) ** 2.0
             
         return (total/2.0)
-        
+
+    cpdef forward_pass(self, np.ndarray input, np.ndarray desired):
+        pass
+
+
+
+    

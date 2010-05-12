@@ -23,12 +23,13 @@ DEF RPROP       = False
 cimport numpy as np
 import  numpy as np
 cimport python as py
-cimport cython as cy
+#cimport cython as cy
 
-cimport Math
-import  snn_toolbox.old.Math as Math
+cimport old.Math
+import  old.Math as Math
 
-from spikeprop_types  import  *
+#from modular.spikeprop_types  cimport  *
+#from modular.spikeprop_types   import  *
 
 
 IF WEAVE:
@@ -97,7 +98,7 @@ cdef class modular(Math.Math):
     #property neg_weights:
     #    def __get__(self):
     #        return NEG_WEIGHTS
-    @cy.profile(False)
+    #@cy.profile(False)
     cdef inline bint last_layer(self):
         cdef bint last_layer
         if self.layer_idx == (self.layer_length - 1):

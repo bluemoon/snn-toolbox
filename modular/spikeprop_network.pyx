@@ -1,19 +1,22 @@
 # encoding: utf-8
 # cython: profile=False
-# cython: boundscheck=True
+# cython: boundscheck=False
 # cython: wraparound=False
-# cython: infer_types=True
-include "misc/conf.pxi"
+# cython: infer_types=False
+include "../misc/conf.pxi"
 
 import  numpy as np
 cimport numpy as np
-import  base
-cimport base
+import sys
+import os
+
+from old.Math cimport *
+from base cimport *
 
 ## network, module, connections
-cdef class modular2(base.network_base):
+cdef class modular2(network_base):
     def __init__(self, layers):
-        base.network_base.__init__(self, layers)
+        network_base.__init__(self, layers)
         
     cpdef forward_pass(self, np.ndarray input, np.ndarray desired):
         self.layers[0].prev.time  = input

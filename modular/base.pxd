@@ -3,7 +3,8 @@ import numpy as np
 
 cdef class neurons_base:
     cdef public int size
-    cdef public np.ndarray time, desired_time
+    cdef public np.ndarray time
+    cdef public np.ndarray desired_time
     
 cdef class layer_base:
     cdef public object prev
@@ -19,14 +20,11 @@ cdef class layer_base:
     
     cdef str weight_method
 
-
     cpdef forward_implementation(self)
-    cdef void backward_implementation(self)
-    
+    cpdef backward_implementation(self)
     cpdef forward(self)
-    cdef void backward(self)
-    
-    cdef void activate(self, np.ndarray)
+    cpdef backward(self)
+    cpdef activate(self, np.ndarray)
 
 cdef class network_base:
     cdef list layers
@@ -35,7 +33,8 @@ cdef class network_base:
     cdef int  layer_idx, layer_length
     cdef bint failed
 
-    cdef double error(self)
-    cdef bint last_layer(self)
+    cpdef error(self)
+    cpdef bint last_layer(self)
     cdef bint first_layer(self)
     cdef bint hidden_layer(self)
+    cpdef forward_pass(self, np.ndarray, np.ndarray)

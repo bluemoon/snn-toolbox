@@ -31,8 +31,10 @@ def xor(which):
 
 t = 'from_python'
 
-from snn_toolbox.old.ng      import *
-from snn_toolbox.modular     import *
+from old.ng import *
+from old.modular import *
+from modular.spikeprop_network import *
+from modular.spikeprop_types   import * 
 
 
 prop = spikeprop_faster(3, 5, 1)
@@ -64,7 +66,7 @@ def run_modular():
             input, desired = xor(w)
             error = prop.backwards_pass(input, desired)
             #prop2.set_values(input, desired)
-            prop2.forward_pass(input, desired)
+            #prop2.forward_pass(input, desired)
             
             total_error += error
             #print "I: ", i.time

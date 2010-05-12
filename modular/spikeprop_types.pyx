@@ -1,33 +1,26 @@
 # cython: profile=False
 # cython: boundscheck=True
 # cython: wraparound=False
-# cython: infer_types=True
-include "misc/conf.pxi"
-
+# cython: infer_types=False
+include "../misc/conf.pxi"
+import sys, os
 import random
 
 import  numpy as np
 cimport numpy as np
 
+from base cimport *
+from old.Math cimport *
 
-cimport base
-import  snn_toolbox.modular.base
-
-import  Math
-cimport Math
-
-
-cdef class neurons(base.neurons_base):
-    #def __init__(self, neurons):
-    #    base.neurons_base.__init__(neurons)
+cdef class neurons(neurons_base):
     pass
     
-cdef class layer(base.layer_base):
+cdef class layer(layer_base):
     cdef object math
     def __init__(self, previous_neurons, next_neurons):
         shape = (previous_neurons.size, next_neurons.size, SYNAPSES)
-        base.layer_base.__init__(self, previous_neurons, next_neurons, shape)
-        self.math = Math.Math()
+        layer_base.__init__(self, previous_neurons, next_neurons, shape)
+        self.math = Math()
         
     cpdef forward_implementation(self): 
         cdef int h, i, j
@@ -65,20 +58,17 @@ cdef class layer(base.layer_base):
             if time >= 50.0:
                 self.failed = True
                 
-    cdef void set_values(self, np.ndarray input, np.ndarray desired):
-        self.layers[0].prev.time = input
-        self.layers[-1].next.time = desired
         
-    cdef void backward_implementation(self):
+    cpdef backward_implementation(self):
         pass
     
     cpdef forward(self):
         self.forward_implementation()
         
-    cdef void backward(self):
+    cpdef backward(self):
         self.backward_implementation()
     
-    cdef void activate(self, np.ndarray input):
+    cpdef activate(self, np.ndarray input):
         #assert self.prev.time.shape == input.shape
         
         self.prev.time = input
