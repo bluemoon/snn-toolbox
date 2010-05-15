@@ -17,6 +17,7 @@ cdef extern from "stdlib.h" nogil:
 
 
 cdef class Math:
+    #cdef types.layer *layers
     cdef:
         list layers
         types.layer output_layer
@@ -30,10 +31,10 @@ cdef class Math:
         
     cdef double e(self, double)
     cdef int sign(self, int)
-    cdef spike_response_derivative(self, double)
+    cdef double spike_response_derivative(self, double)
     cdef double y(self, double, double, double)
-    cdef double excitation(self, np.ndarray, double, double)
-    cdef excitation_derivative(self, np.ndarray, double, double)
+    cdef inline double excitation(self, double *, double, double)
+    cdef double excitation_derivative(self, double *, double, double)
     cdef double error_weight_derivative(self, double, double, double, double)
     cdef double change(self, double, double, double, double)
     cdef delta_j(self, int)

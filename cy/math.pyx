@@ -3,36 +3,9 @@
 # cython: wraparound=False
 # cython: infer_types=True
 
-#include "conf.pxi"
-DEF WEAVE       = False
-DEF MP          = False
-DEF DECAY       = 7
-DEF SYNAPSES    = 16
-DEF IPSP        = 1
-DEF MAX_TIME    = 50
-DEF TIME_STEP   = 0.1
-DEF NEG_WEIGHTS = False
-
-DEF QUICKPROP   = False
-DEF RPROP       = False
+include "../misc/conf.pxi"
 
 
-import numpy as np
-cimport numpy  as np
-
-cdef extern from "math.h" nogil:
-    double c_exp "exp" (double)
-    double c_modf "modf" (double, double*)
-    double c_tan  "tan" (double)
-
-cdef extern from "spike_prop.h" nogil:
-    double c_e "e"(double)
-    
-cdef extern from "stdlib.h" nogil:
-    int    c_rand  "rand" ()
-    int    c_srand "srand" (int)
-    double c_fmod  "fmod" (double, double)
-    
 cdef class Math:
     cdef double e(self, double time):
         return c_e(time)
@@ -53,8 +26,8 @@ cdef class Math:
         else:
             return 0
 
-    cdef spike_response_derivative(self, double time):
-        response = 0
+    cdef double spike_response_derivative(self, double time):
+        cdef double response = 0
         if time <= 0:
             return response
         else:
@@ -63,8 +36,7 @@ cdef class Math:
     cdef double y(self, double time, double spike, double delay):
         return c_e(time - spike - delay)
     
-    cdef double excitation(self, np.ndarray weights, double spike, double time):
-        cdef double *p = <double *>weights.data
+    cdef inline double excitation(self, double *weights, double spike, double time):
         cdef double weight, output = 0.0
         cdef int k, i, delay
         ## if time >= (spike + delay)
@@ -77,7 +49,7 @@ cdef class Math:
         i = int(time-spike)
         for k from 0 <= k < i:
             delay = k+1
-            weight = p[k]
+            weight = weights[k]
             output += (weight * c_e(time-spike-delay))
 
         return output
@@ -121,17 +93,17 @@ cdef class Math:
         
         # return output
 
-    cdef excitation_derivative(self, np.ndarray weights, double spike_time, double time):
-        cdef output = 0.0
+    cdef double excitation_derivative(self, double *weights, double spike_time, double time):
+        cdef double output = 0.0
+        cdef double weight
         cdef int k
         if time >= spike_time:
             for k in xrange(SYNAPSES):
-                weight = weights[k]
                 delay  = k + 1
                 ## will fire when current time 
                 ## (timeT) >= time of spike + delay otherwise zero
                 if time >= (spike_time + delay):
-                    output += (weight * self.spike_response_derivative((time - spike_time - delay)))
+                    output += (weights[k] * self.spike_response_derivative((time - spike_time - delay)))
                     ## else no charge
                     
         return output
@@ -144,7 +116,7 @@ cdef class Math:
         #assert self.last_layer
         ot = 0.0
         for i in range(self.layer.prev.size):
-            e_derivative =  self.excitation_derivative(self.layer.weights[i, j], 
+            e_derivative =  self.excitation_derivative(<double *>np.PyArray_GETPTR2(self.layer.weights, i, j), 
                             self.layer.prev.time[i], 
                             self.layer.next.time[j])
 
@@ -170,7 +142,7 @@ cdef class Math:
         for j in xrange(next_layer.next.size):
             actual_time = next_layer.next.time[j]
             delta = next_layer.deltas[j]
-            excitation_d = self.excitation_derivative(next_layer.weights[i, j], spike_time, actual_time)
+            excitation_d = self.excitation_derivative(<double *>np.PyArray_GETPTR2(next_layer.weights, i, j), spike_time, actual_time)
             if i >= (self.layer.next.size - IPSP):
                 #debug("IPSP Call: neuron: %d layer: %d layer size: %d" % (i, self.layer_idx, self.layer.next.size))
                 ot = -excitation_d
@@ -187,7 +159,7 @@ cdef class Math:
         actual_time = self.layer.next.time[i]
         for h in xrange(self.layer.prev.size):
             spike_time = self.layer.prev.time[h]
-            ot = self.excitation_derivative(self.layer.weights[h, i], spike_time, actual_time)
+            ot = self.excitation_derivative(<double *>np.PyArray_GETPTR2(self.layer.weights, h, i), spike_time, actual_time)
             actual += ot
         
         if i >= (self.layer.next.size - IPSP):
