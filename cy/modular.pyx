@@ -306,7 +306,3 @@ cdef class modular(cy.math.Math):
         return (total/2.0)
 
 
-
-if __name__ == "__main__":
-    import doctest
-    doctest.testmod()
