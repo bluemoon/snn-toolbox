@@ -1,6 +1,6 @@
-cimport numpy  as np
-import numpy as np
- 
+include "../misc/conf.pxi"
+cimport modular.spike_types as types
+
 cdef extern from "math.h" nogil:
     double c_exp "exp" (double)
     double c_modf "modf" (double, double*)
@@ -17,16 +17,17 @@ cdef extern from "stdlib.h" nogil:
 
 
 cdef class Math:
-    cdef list layers
-    cdef object output_layer
-    cdef object input_layer
-    cdef object propagating_type
-    #cdef void propagating_routine
-    cdef int threshold
-    cdef bint failed
-    cdef object layer
-    cdef int layer_idx
-    
+    cdef:
+        list layers
+        types.layer output_layer
+        types.layer input_layer
+        types.layer layer
+        object propagating_type
+        int threshold, layer_idx
+        int layer_length
+        bint failed
+
+        
     cdef double e(self, double)
     cdef int sign(self, int)
     cdef spike_response_derivative(self, double)

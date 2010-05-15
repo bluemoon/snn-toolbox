@@ -45,7 +45,7 @@ setup(
     packages=['snn_toolbox', 'snn_toolbox.modular', 'snn_toolbox.cy'],
     package_dir={'snn_toolbox': 'py'},
     zip_safe=False,
-    version='0.0.1.9a',
+    version='0.0.1.9b',
     test_suite = 'nose.collector',
     setup_requires = ['nose>=0.10.4'],
 )

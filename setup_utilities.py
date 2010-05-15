@@ -6,6 +6,8 @@ from distutils.dep_util import newer_group
 from types import ListType, TupleType
 from distutils import log
 import distutils.sysconfig
+import hashlib
+import pickle
 
 extra_compile_args = []
 ext_modules = []
@@ -30,6 +32,23 @@ SITE_PACKAGES = '/usr/lib/python2.6/site-packages/'
 #    else:
 #        m.library_dirs += ['%s/lib' % SAGE_LOCAL]
 
+
+def md5_file(file):
+    file_reference = open(file, 'rb')
+    data = file_reference.read()
+    file_reference.close()
+    return hashlib.md5(data).hexdigest()
+
+def pickle_dict(dictionary):
+    output = open('setup.pickle', 'wb')
+    pickle.dump(dictionary, output)
+    output.close()
+
+def unpickle():
+    output = open('setup.pickle', 'rb')
+    p = pickle.load(output)
+    output.close()
+    return p
 
 def execute_list_of_commands_in_serial(command_list):
     """
@@ -427,10 +446,22 @@ class DependencyTree:
         
         dirname = os.path.split(filename)[0]
         deps = set()
+
+        try:
+            dictionary = unpickle()
+        except Exception, E:
+            dictionary = {}
+            
+        if md5_file(filename) not in dictionary.values():
+            dictionary[filename] = md5_file(filename)
+            
         if filename.endswith('.pyx'):
             pxd_file = filename[:-4] + '.pxd'
             if os.path.exists(pxd_file):
                 deps.add(pxd_file)
+                    
+        pickle_dict(dictionary)
+
         
         raw_deps = []
         f = open(filename)
@@ -573,17 +604,14 @@ def compile_command(p):
             
         print outfile
         # call cython, abort if it failed
-        cmd = "python `which cython` -D -X boundscheck=False -p -I%s -o %s %s"%(os.getcwd(), outfile, f)
+        cmd = "python `which cython`  -X boundscheck=True -p -I%s -o %s %s"%(os.getcwd(), outfile, f)
         r = run_command(cmd)
         if r:
             return r
 
         # if cython worked, copy the file to the build directory
         pyx_inst_file = '%s/%s'%(SITE_PACKAGES, f)
-        #print f
-        
         retval = os.system('cp %s %s 2>/dev/null'%(f, '/tmp/'))
-        retval = 0
         # we could do this more elegantly -- load the files, use
         # os.path.exists to check that they exist, etc. ... but the
         # *vast* majority of the time, the copy just works. so this is

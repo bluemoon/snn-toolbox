@@ -13,14 +13,16 @@ import  random
 
 cdef class neurons_base:
     def __init__(self, int neurons):
-        self.size         = neurons
-        self.time         = np.ndarray((neurons))
-        self.desired_time = np.ndarray((neurons))
-        
+        self.size          = neurons
+        self.time          = np.ndarray((neurons))
+        self.desired_time  = np.ndarray((neurons))
+        #self.time_data     = <double *>self.time.data
 
+    def __repr__(self):
+        return '<neuron size:%d>' % self.size
     
 cdef class layer_base:
-    def __init__(self, previous_neurons, next_neurons, shape): 
+    def __init__(self, neurons_base previous_neurons, neurons_base next_neurons, shape): 
         cdef int previous = previous_neurons.size
         cdef int next     = next_neurons.size
 
@@ -41,10 +43,10 @@ cdef class layer_base:
         if self.weight_method == 'random1':
             for i in xrange(self.prev.size):
                 for h in xrange(self.next.size):
-                    #r = #random.randint(1, 10)
-                    r = c_rand() % 10
+                    r = random.randint(1, 10)
+                    #r = c_rand() % 10.0
                     for k in xrange(SYNAPSES):
-                        self.weights[i, h, k] = r + 1
+                        self.weights[i, h, k] = r
 
         elif self.weight_method == 'random2':
             for i in xrange(self.prev.size):
@@ -56,7 +58,10 @@ cdef class layer_base:
         elif self.weight_method == 'normalized':
             mu, sigma = 1, 3
             self.weights = np.random.normal(mu, sigma, size=(previous, next, SYNAPSES))
-            
+
+    def __repr__(self):
+        return '<layer prev size:%d next size: %d>' % (self.prev.size, self.next.size)
+
     cpdef forward_implementation(self):
         pass
     

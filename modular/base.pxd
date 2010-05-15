@@ -1,11 +1,19 @@
 cimport numpy as np
 #import numpy as np
-
+ctypedef struct neuron_t:
+    double *time
+    np.PyArrayObject *time_arr
+    np.PyArrayObject *desired_time
+    int size
 
 cdef class neurons_base:
+    #cdef neuron_t neuron
+    #cdef double *time_data
     cdef readonly int size
-    cdef public np.ndarray time
-    cdef public np.ndarray desired_time
+    cdef public:
+        np.ndarray time
+        np.ndarray desired_time
+
     
 cdef class layer_base:
     cdef public:
