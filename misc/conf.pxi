@@ -4,7 +4,7 @@ DEF DECAY       = 7
 DEF SYNAPSES    = 16
 DEF IPSP        = 1
 DEF MAX_TIME    = 50
-DEF TIME_STEP   = 0.1
+DEF TIME_STEP   = 0.01
 DEF NEG_WEIGHTS = False
 
 DEF QUICKPROP   = False
@@ -15,3 +15,7 @@ cdef extern from "spike_prop.h" nogil:
 
 cdef extern from "stdlib.h" nogil:
     int c_rand "rand"()
+    
+import  numpy  as np
+cimport numpy  as np
+cimport python as py

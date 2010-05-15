@@ -10,7 +10,7 @@ cimport numpy as np
 import sys
 import os
 
-from cy.Math cimport *
+from cy.math cimport *
 from base cimport *
 
 ## network, module, connections

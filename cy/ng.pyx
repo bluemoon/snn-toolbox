@@ -53,7 +53,7 @@ cdef int sign(num):
         return 0
     
 #@cy.cdivision(True)
-cdef double srfd(double time) nogil:
+cdef double srfd(double time):
     cdef double asrfd = 0
     if time <= 0:
         return asrfd

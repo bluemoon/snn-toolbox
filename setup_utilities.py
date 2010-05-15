@@ -120,6 +120,7 @@ def execute_list_of_commands(command_list):
         are run in parallel.
     """
     t = time.time()
+    """
     if not os.environ.has_key('MAKE'):
         nthreads = 1
     else:
@@ -139,7 +140,8 @@ def execute_list_of_commands(command_list):
                     nthreads = min(nthreads, n)
             except ValueError:
                 nthreads = 1
-
+    """
+    nthreads = 3
     # normalize the command_list to handle strings correctly
     command_list = [ [run_command, x] if isinstance(x, str) else x for x in command_list ]
                 
@@ -176,26 +178,27 @@ class sage_build_ext(build_ext):
 
         # We require MAKE to be set to decide how many cpus are
         # requested.
-        if not os.environ.has_key('MAKE'):
-            ncpus = 1
-        else:
-            MAKE = os.environ['MAKE']
-            z = [w[2:] for w in MAKE.split() if w.startswith('-j')]
-            if len(z) == 0:  # no command line option
-                ncpus = 1
-            else:
-                # Determine number of cpus from command line argument.
+
+        #if not os.environ.has_key('MAKE'):
+        #    ncpus = 1
+        #else:
+        #    MAKE = os.environ['MAKE']
+        #    z = [w[2:] for w in MAKE.split() if w.startswith('-j')]
+        #    if len(z) == 0:  # no command line option
+        #        ncpus = 1
+        #    else:
+        #        # Determine number of cpus from command line argument.
                 # Also, use the OS to cap the number of cpus, in case
                 # user annoyingly makes a typo and asks to use 10000
                 # cpus at once.
-                try:
-                    ncpus = int(z[0])
-                    n = 2*number_of_threads()
-                    if n:  # prevent dumb typos.
-                        ncpus = min(ncpus, n)
-                except ValueError:
-                    ncpus = 1
-
+        #        try:
+        #            ncpus = int(z[0])
+        #            n = 2*number_of_threads()
+        #            if n:  # prevent dumb typos.
+        #                ncpus = min(ncpus, n)
+        #        except ValueError:
+        #            ncpus = 1
+        ncpus = 2
         import time
         t = time.time()
 
@@ -567,9 +570,10 @@ def compile_command(p):
             outfile += ".cpp"
         else:
             outfile += ".c"
-
+            
+        print outfile
         # call cython, abort if it failed
-        cmd = "python `which cython` -D -X boundscheck=False --embed-positions -I%s -o %s %s"%(os.getcwd(), outfile, f)
+        cmd = "python `which cython` -D -X boundscheck=False -p -I%s -o %s %s"%(os.getcwd(), outfile, f)
         r = run_command(cmd)
         if r:
             return r
@@ -577,7 +581,8 @@ def compile_command(p):
         # if cython worked, copy the file to the build directory
         pyx_inst_file = '%s/%s'%(SITE_PACKAGES, f)
         #print f
-        #retval = os.system('cp %s %s 2>/dev/null'%(f, pyx_inst_file))
+        
+        retval = os.system('cp %s %s 2>/dev/null'%(f, '/tmp/'))
         retval = 0
         # we could do this more elegantly -- load the files, use
         # os.path.exists to check that they exist, etc. ... but the

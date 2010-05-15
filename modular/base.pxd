@@ -8,16 +8,17 @@ cdef class neurons_base:
     cdef public np.ndarray desired_time
     
 cdef class layer_base:
-    cdef public object prev
-    cdef public object next
-    cdef public np.ndarray weights
-    cdef public np.ndarray deltas
-    cdef public np.ndarray derivative
-    cdef public np.ndarray weight_delta
-    cdef public double learning_rate
-    cdef public int threshold
-    cdef public int prev_dim, next_dim
-    cdef public bint last_layer
+    cdef public:
+        neurons_base prev, next
+        np.ndarray weights
+        np.ndarray deltas
+        np.ndarray derivative
+        np.ndarray weight_delta
+        double learning_rate
+        int threshold
+        int prev_dim, next_dim
+        bint last_layer
+
     
     cdef str weight_method
 

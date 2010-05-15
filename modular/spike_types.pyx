@@ -6,11 +6,10 @@ include "../misc/conf.pxi"
 import sys, os
 import random
 
-import  numpy as np
-cimport numpy as np
+
 
 from base cimport *
-from cy.Math cimport *
+from cy.math cimport *
 
 cdef class neurons(neurons_base):
     pass
@@ -59,7 +58,16 @@ cdef class layer(layer_base):
                 
         
     cpdef backward_implementation(self):
-        pass
+        self.forward_implementation()
+        for j in xrange(self.next.size):
+            actual = self.next.time[j]
+            delta  = self.delta[j]
+            for i in xrange(self.prev.size):
+                spike = self.prev.time[i]
+                for k in xrange(SYNAPSES):
+                    delay = k + 1
+                    weight = self.layer.weight[i,j,k]
+                    #delta  = self.descent_propagate()
     
     cpdef forward(self):
         self.forward_implementation()

@@ -40,10 +40,10 @@ def xor(which):
 
 t = 'from_python'
 
-from old.ng import *
-from old.modular import *
-from modular.spikeprop_network import *
-from modular.spikeprop_types   import * 
+from cy.ng import *
+from cy.modular import *
+from modular.spike_network import *
+from modular.spike_types   import * 
 
 
 prop = spikeprop_faster(3, 5, 1)
@@ -74,67 +74,17 @@ def run_modular():
         for w in xrange(4):
             input, desired = xor(w)
             error = prop.backwards_pass(input, desired)
-            #prop2.set_values(input, desired)
-            #prop2.forward_pass(input, desired)
-            
             total_error += error
-            #print "I: ", i.time
-            #print "H: ", h.time
-            #print "O: ", o.time
-            
             
         print "XOR: %d Total Error: %fms" % (x, total_error)
         x += 1
 
         
-            
-
-    
-def run_test(threshold):
-    iterations = 5000
-    x = 0
-    total_error = 10.0
-    errors = []
-    prop.threshold = threshold
-    while x < iterations and total_error > 0.5 and prop.failed == False:
-        total_error = 0.0
-        error_per = 0.0
-        for w in xrange(4):
-            input, desired = xor(w)
-            error = prop.adapt(input, desired)
-            #print prop.hidden_weights
-            #print prop.output_weights
-            
-            if error == False:
-                break
-            error_per += error
-            total_error += error
-            
-        errors.append(error_per/4.0)
-        error_per = 0
-
-            
-        print "XOR: %d Total Error: %fms" % (x, total_error)
-        x += 1
-            
-    if prop.failed == True:
-        print "!!! Failed !!!"
-        return
-    return errors
-
-
-            
 if options.debug:
     cProfile.run("run_modular()","Profile.prof")
     s = pstats.Stats("Profile.prof")
     s.strip_dirs().sort_stats("time").print_stats()
 else:
-    #sets = []
-    #for threshold in xrange(20,50):
-    #    plt.plot(run_test(threshold))
-    #    plt.show()
-    #run_test(50)   
-    #run_test(50)
     run_modular()
 
 

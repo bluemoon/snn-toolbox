@@ -16,7 +16,9 @@ cdef class neurons_base:
         self.size         = neurons
         self.time         = np.ndarray((neurons))
         self.desired_time = np.ndarray((neurons))
+        
 
+    
 cdef class layer_base:
     def __init__(self, previous_neurons, next_neurons, shape): 
         cdef int previous = previous_neurons.size
@@ -28,10 +30,10 @@ cdef class layer_base:
         self.prev_dim = previous
         self.next_dim = next
         
-        self.weights = np.zeros(shape)#np.random.rand(shape) * 10.0
+        self.weights = np.ndarray(shape)
         self.deltas  = np.ndarray((next))
-        self.derivative   = np.zeros(shape) #np.random.rand(shape)
-        self.weight_delta = np.zeros(shape) #np.random.rand(shape)
+        self.derivative   = np.ndarray(shape) 
+        self.weight_delta = np.ndarray(shape) 
         self.learning_rate = 1.0
         self.threshold = 50
         self.weight_method = 'random1'
@@ -39,9 +41,10 @@ cdef class layer_base:
         if self.weight_method == 'random1':
             for i in xrange(self.prev.size):
                 for h in xrange(self.next.size):
+                    #r = #random.randint(1, 10)
                     r = c_rand() % 10
                     for k in xrange(SYNAPSES):
-                        self.weights[i, h, k] = r
+                        self.weights[i, h, k] = r + 1
 
         elif self.weight_method == 'random2':
             for i in xrange(self.prev.size):
