@@ -287,9 +287,9 @@ cdef class modular(cy.math.Math):
 
                     ## now set the next layers spike time to the current time
                     ## XXX: check to see if this can be optimized    
-                    self.layer.next.time[i] = time
-                    time += TIME_STEP
                     
+                    time += TIME_STEP
+                self.layer.next.time[i] = time-TIME_STEP
                 
                 
                 if time >= 50.0:
