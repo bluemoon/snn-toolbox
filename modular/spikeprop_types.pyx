@@ -1,5 +1,5 @@
 # cython: profile=False
-# cython: boundscheck=True
+# cython: boundscheck=False
 # cython: wraparound=False
 # cython: infer_types=False
 include "../misc/conf.pxi"
@@ -10,13 +10,12 @@ import  numpy as np
 cimport numpy as np
 
 from base cimport *
-from old.Math cimport *
+from cy.Math cimport *
 
 cdef class neurons(neurons_base):
     pass
     
 cdef class layer(layer_base):
-    cdef object math
     def __init__(self, previous_neurons, next_neurons):
         shape = (previous_neurons.size, next_neurons.size, SYNAPSES)
         layer_base.__init__(self, previous_neurons, next_neurons, shape)

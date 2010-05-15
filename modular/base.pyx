@@ -8,17 +8,17 @@ include "../misc/conf.pxi"
 
 cimport numpy as np
 import  numpy as np
-
 import  random
 
+
 cdef class neurons_base:
-    def __init__(self, neurons):
+    def __init__(self, int neurons):
         self.size         = neurons
         self.time         = np.ndarray((neurons))
         self.desired_time = np.ndarray((neurons))
 
 cdef class layer_base:
-    def __init__(self, object previous_neurons, object next_neurons, tuple shape): 
+    def __init__(self, previous_neurons, next_neurons, shape): 
         cdef int previous = previous_neurons.size
         cdef int next     = next_neurons.size
 
@@ -34,12 +34,12 @@ cdef class layer_base:
         self.weight_delta = np.zeros(shape) #np.random.rand(shape)
         self.learning_rate = 1.0
         self.threshold = 50
-        self.weight_method = 'random2'
+        self.weight_method = 'random1'
         
         if self.weight_method == 'random1':
             for i in xrange(self.prev.size):
                 for h in xrange(self.next.size):
-                    r = random.randint(1, 10) 
+                    r = c_rand() % 10
                     for k in xrange(SYNAPSES):
                         self.weights[i, h, k] = r
 
@@ -51,7 +51,7 @@ cdef class layer_base:
                         self.weights[i, h, k] = r
 
         elif self.weight_method == 'normalized':
-            mu, sigma = 1, 0.11
+            mu, sigma = 1, 3
             self.weights = np.random.normal(mu, sigma, size=(previous, next, SYNAPSES))
             
     cpdef forward_implementation(self):
@@ -67,7 +67,7 @@ cdef class layer_base:
         self.backward_implementation()
     
     cpdef activate(self, np.ndarray input):
-        pass
+        pass 
     
     
 cdef class network_base:

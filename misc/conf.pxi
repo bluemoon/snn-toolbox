@@ -12,3 +12,6 @@ DEF RPROP       = False
 
 cdef extern from "spike_prop.h" nogil:
     double c_e "e"(double)
+
+cdef extern from "stdlib.h" nogil:
+    int c_rand "rand"()

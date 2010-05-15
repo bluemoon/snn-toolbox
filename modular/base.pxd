@@ -1,8 +1,9 @@
 cimport numpy as np
-import numpy as np
+#import numpy as np
+
 
 cdef class neurons_base:
-    cdef public int size
+    cdef readonly int size
     cdef public np.ndarray time
     cdef public np.ndarray desired_time
     
