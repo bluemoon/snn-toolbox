@@ -3,10 +3,8 @@
 # cython: wraparound=False
 # cython: infer_types=False
 include "../misc/conf.pxi"
-import sys, os
+#import sys, os
 import random
-
-
 
 from base cimport *
 from cy.math cimport *
@@ -15,6 +13,7 @@ cdef class neurons(neurons_base):
     pass
     
 cdef class layer(layer_base):
+
     def __init__(self, neurons previous_neurons, neurons next_neurons):
         shape = (previous_neurons.size, next_neurons.size, SYNAPSES)
         layer_base.__init__(self, previous_neurons, next_neurons, shape)

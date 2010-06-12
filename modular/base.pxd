@@ -7,8 +7,6 @@ ctypedef struct neuron_t:
     int size
 
 cdef class neurons_base:
-    #cdef neuron_t neuron
-    #cdef double *time_data
     cdef readonly int size
     cdef public:
         np.ndarray time

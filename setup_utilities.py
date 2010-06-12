@@ -1,6 +1,6 @@
 import numpy, time
 import os, sys
-
+from sets import Set
 from distutils.command.build_ext import build_ext
 from distutils.dep_util import newer_group
 from types import ListType, TupleType
@@ -23,15 +23,6 @@ if DEVEL:
 
 CYTHON_INCLUDE_DIRS=['/usr/lib/python2.6/site-packages/Cython/Includes/']
 SITE_PACKAGES = '/usr/lib/python2.6/site-packages/'
-
-#for m in ext_modules:
-#    m.libraries = ['csage'] + m.libraries + ['stdc++', 'ntl']
-#    m.extra_compile_args += extra_compile_args
-#    if os.environ.has_key('SAGE_DEBIAN'):
-#        m.library_dirs += ['/usr/lib','/usr/lib/eclib','/usr/lib/singular','/usr/lib/R/lib','%s/lib' % SAGE_LOCAL]
-#    else:
-#        m.library_dirs += ['%s/lib' % SAGE_LOCAL]
-
 
 def md5_file(file):
     file_reference = open(file, 'rb')
@@ -190,61 +181,27 @@ def execute_list_of_commands(command_list):
 ##
 ########################################################################
         
-class sage_build_ext(build_ext):
+class setup_build_ext(build_ext):
     def build_extensions(self):
         # First, sanity-check the 'extensions' list
         self.check_extensions_list(self.extensions)
+        ncpus = 3
 
-        # We require MAKE to be set to decide how many cpus are
-        # requested.
-
-        #if not os.environ.has_key('MAKE'):
-        #    ncpus = 1
-        #else:
-        #    MAKE = os.environ['MAKE']
-        #    z = [w[2:] for w in MAKE.split() if w.startswith('-j')]
-        #    if len(z) == 0:  # no command line option
-        #        ncpus = 1
-        #    else:
-        #        # Determine number of cpus from command line argument.
-                # Also, use the OS to cap the number of cpus, in case
-                # user annoyingly makes a typo and asks to use 10000
-                # cpus at once.
-        #        try:
-        #            ncpus = int(z[0])
-        #            n = 2*number_of_threads()
-        #            if n:  # prevent dumb typos.
-        #                ncpus = min(ncpus, n)
-        #        except ValueError:
-        #            ncpus = 1
-        ncpus = 2
-        import time
         t = time.time()
-
-        if ncpus > 1:
-
-            # First, decide *which* extensions need rebuilt at
-            # all.
-            extensions_to_compile = []
-            for ext in self.extensions:
-                need_to_compile, p = self.prepare_extension(ext)
-                if need_to_compile:
-                    extensions_to_compile.append(p)
+        extensions_to_compile = []
+        for ext in self.extensions:
+            need_to_compile, p = self.prepare_extension(ext)
+            if need_to_compile:
+                extensions_to_compile.append(p)
 
             # If there were any extensions that needed to be
             # rebuilt, dispatch them using pyprocessing.
-            if extensions_to_compile:
-               from multiprocessing import Pool
-               import twisted.persisted.styles #doing this import will allow instancemethods to be pickable
-               p = Pool(min(ncpus, len(extensions_to_compile)))
-               for r in p.imap(self.build_extension, extensions_to_compile):
-                   pass
-
-        else:
-            for ext in self.extensions:
-                need_to_compile, p = self.prepare_extension(ext)
-                if need_to_compile:
-                    self.build_extension(p)
+        if extensions_to_compile:
+            from multiprocessing import Pool
+            import twisted.persisted.styles #doing this import will allow instancemethods to be pickable
+            p = Pool(min(ncpus, len(extensions_to_compile)))
+            for r in p.imap(self.build_extension, extensions_to_compile):
+                pass
 
         print "Total time spent compiling C/C++ extensions: ", time.time() - t, "seconds."
 
@@ -255,21 +212,16 @@ class sage_build_ext(build_ext):
                   ("in 'ext_modules' option (extension '%s'), " +
                    "'sources' must be present and must be " +
                    "a list of source filenames") % ext.name
+        
         sources = list(sources)
-
         fullname = self.get_ext_fullname(ext.name)
         if self.inplace:
-            # ignore build-lib -- put the compiled extension into
-            # the source tree along with pure Python modules
-
             modpath = string.split(fullname, '.')
             package = string.join(modpath[0:-1], '.')
             base = modpath[-1]
-
             build_py = self.get_finalized_command('build_py')
             package_dir = build_py.get_package_dir(package)
-            ext_filename = os.path.join(package_dir,
-                                        self.get_ext_filename(base))
+            ext_filename = os.path.join(package_dir, self.get_ext_filename(base))
             relative_ext_filename = self.get_ext_filename(base)
         else:
             ext_filename = os.path.join(self.build_lib,
@@ -290,8 +242,13 @@ class sage_build_ext(build_ext):
             path = os.path.join(prefix, relative_ext_dir)
             if not os.path.exists(path):
                 os.makedirs(path)
-                            
+
+        deps = DependencyTree()
+        depends = deps.all_deps(sources[0])
+        #print "depends:", [x for x in depends]
+        d = [x for x in depends if os.path.splitext(x)[1] == 'pyx']
         depends = sources + ext.depends
+        
         if not (self.force or newer_group(depends, ext_filename, 'newer')):
             log.debug("skipping '%s' extension (up-to-date)", ext.name)
             need_to_compile = False
@@ -376,8 +333,6 @@ class sage_build_ext(build_ext):
 #############################################
 ###### Dependency checking
 #############################################
-
-#CYTHON_INCLUDE_DIRS=[ SAGE_LOCAL + '/lib/python/site-packages/Cython/Includes/' ]
 
 # matches any dependency
 import re
@@ -535,17 +490,21 @@ class DependencyTree:
         """
         if filename not in self._deps_all:
             circular = False
-            deps = set([filename])
+            deps = Set([filename])
             if path is None:
-                path = set([filename])
+                path = Set([filename])
             else:
-                path.add(filename)
+                path.update(filename)
+                
             for f in self.immediate_deps(filename):
                 if f not in path:
                     deps.update(self.all_deps(f, path))
                 else:
                     circular = True
-            path.remove(filename)
+            try:
+                path.remove(filename)
+            except:
+                pass
             if circular:
                 return deps # Don't cache, as this may be incomplete
             else:
@@ -602,15 +561,16 @@ def compile_command(p):
         else:
             outfile += ".c"
             
-        print outfile
+        #print outfile
         # call cython, abort if it failed
-        cmd = "python `which cython`  -X boundscheck=True -p -I%s -o %s %s"%(os.getcwd(), outfile, f)
+        
+        cmd = "python `which cython` -X boundscheck=True -p -I%s -o %s %s" % (os.getcwd(), outfile, f)
         r = run_command(cmd)
         if r:
             return r
 
         # if cython worked, copy the file to the build directory
-        pyx_inst_file = '%s/%s'%(SITE_PACKAGES, f)
+        pyx_inst_file = f
         retval = os.system('cp %s %s 2>/dev/null'%(f, '/tmp/'))
         # we could do this more elegantly -- load the files, use
         # os.path.exists to check that they exist, etc. ... but the
@@ -646,7 +606,7 @@ def compile_command_list(ext_modules, deps):
         for f in m.sources:
             if f.endswith('.pyx'):
                 dep_file, dep_time = deps.newest_dep(f)
-                dest_file = "%s/%s"%(SITE_PACKAGES, f)
+                dest_file = os.path.splitext(f)[0] + '.c'
                 dest_time = deps.timestamp(dest_file)
                 if dest_time < dep_time:
                     if dep_file == f:
@@ -662,3 +622,9 @@ def compile_command_list(ext_modules, deps):
         m.sources = new_sources
     return queue_compile_high + queue_compile_med + queue_compile_low
 
+def merge(seq):
+    merged = []
+    for s in seq:
+        for x in s:
+            merged.append(x)
+    return merged

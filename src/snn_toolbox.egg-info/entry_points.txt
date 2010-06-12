@@ -1,0 +1,5 @@
+[console_scripts]
+snn_modular = snn_toolbox.ng.main:modular
+snn_new = snn_toolbox.new.main:main
+snn_src = snn_toolbox.ng.main:main
+

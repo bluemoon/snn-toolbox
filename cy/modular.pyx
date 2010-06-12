@@ -9,8 +9,7 @@ cimport modular.spike_types as types
 
 cimport cy.math
 import  cy.math
-
-#np.import_array()
+np.import_array()
     
 
 ## Checklist

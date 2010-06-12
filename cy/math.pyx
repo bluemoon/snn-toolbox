@@ -4,8 +4,105 @@
 # cython: infer_types=True
 
 include "../misc/conf.pxi"
+cpdef double srfd(double time):
+    cdef double asrfd = 0
+    if time <= 0:
+        return asrfd
+    else:
+        return c_e(time) * ((1.0/time) - (1.0/DECAY))
+
+cpdef E(double time):
+    return c_e(time)
+
+cdef class math:
+    cpdef double y(self, double time, double spike, int delay):
+        return c_e(time-spike-delay)
+    
+    cpdef generate_weights(self, dims, weights, type=None):
+        for h in xrange(dims[0]):
+            for i in xrange(dims[1]):
+                for k in xrange(dims[2]):
+                    weights[i,h,k] = c_fmod(c_rand(), 10)
+                    
+    cpdef change(self, actual, spike, delay, delta):
+        return self.y(actual, spike, delay) * delta
+    
+    cpdef equation_12(self, j, desired, output, obj):
+        return (desired[j]-output[j])/(self.equation_12_bottom(j, obj))
+                                       
+    cpdef equation_12_bottom(self, j, obj):
+        ot = 0.0
+        for i in range(obj.prev.size):
+            if i >= (obj.prev.size - 1):
+                ot = ot - self.link_out_d(obj.weights[i,j], obj.prev.time[i], obj.next.time[j])
+            else:
+                ot = ot + self.link_out_d(obj.weights[i,j], obj.prev.time[i], obj.next.time[j])
+        return ot
+    
+    cpdef link_out(self, weights, spike, time):
+        cdef int k, i
+        cdef double output = 0
+        for k in xrange(16):
+            delay = k+1
+            output += (weights[k] * c_e(time-spike-delay))
+
+        return output
+    
+    cpdef link_out_d(self, np.ndarray weights, double spike_time, double time):
+        cdef double output = 0.0
+        cdef int delay, k
 
 
+        if time >= spike_time:
+            for k in range(SYNAPSES):
+                weight = weights[k]
+                delay  = k + 1
+                ## will fire when current time 
+                ## (timeT) >= time of spike + delay otherwise zero
+                if time >= (spike_time + delay):
+                    output += (weight * srfd((time - delay - spike_time)))
+                ## else no charge
+
+        ## else none will fire
+        return output
+    
+    cpdef _e17top(self, i, delta_j, obj):
+        ot = 0.0
+        actual = 0.0
+        spike_time = obj.next.time[i]
+        for j in range(obj.layers[-1].next.size):
+            actual_time_j = obj.layers[-1].next.time[j]
+            dj = delta_j[j]
+            if i >= (obj.next.size-1):
+                ot = -self.link_out_d(obj.layers[-1].weights[i,j], spike_time, actual_time_j)
+            else:
+                ot = self.link_out_d(obj.layers[-1].weights[i,j], spike_time, actual_time_j)
+            actual = actual + (dj*ot)
+
+        return actual
+    
+    cpdef _e17bottom(self, i, obj):
+        ## 100%
+        cdef double actual = 0.0
+        cdef double ot, actual_time = 0.0
+        actual_time = obj.next.time[i]
+
+        for h in range(obj.prev.size):
+            spike_time = obj.prev.time[h]
+            ot = self.link_out_d(obj.weights[h,i], spike_time, actual_time)
+            actual = actual + ot
+        
+        if i >= (obj.next.size-1):
+            return -actual
+        else:
+            return actual
+
+    cpdef equation_17(self, i, delta_j, obj):
+        actual = self._e17top(i, delta_j, obj)/self._e17bottom(i, obj)
+        return actual
+
+    
+    
 cdef class Math:
     cdef double e(self, double time):
         return c_e(time)
@@ -19,12 +116,13 @@ cdef class Math:
         -1
         
         """
-        if number > 0:
-            return 1
-        elif number < 0:
-            return -1
-        else:
-            return 0
+        return (number > 0) - (number < 0)
+        #if number > 0:
+        #    return 1
+        #elif number < 0:
+        #    return -1
+        #else:
+        #    return 0
 
     cdef double spike_response_derivative(self, double time):
         cdef double response = 0

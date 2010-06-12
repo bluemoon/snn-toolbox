@@ -10,13 +10,15 @@ parser.add_option("-n", "--ng", dest="ng", action="store_true")
 (options, args) = parser.parse_args()
 
 from modular.dataset import dataset
-data = [
-    [[0.0, 0.1, 0.1], [16.0]],
-    [[0.0, 0.1, 6.0], [10.0]],
-    [[0.0, 6.0, 0.1], [10.0]],
-    [[0.0, 6.0, 6.0], [16.0]],    
-    ]
+input = np.array([[0.0, 0.1, 0.1],
+                    [0.0, 0.1, 6.0],
+                    [0.0, 6.0, 0.1],
+                    [0.0, 6.0, 6.0]
+                    ])
+desired = np.array([[16.0], [10.0], [10.0], [16.0]])
+data = [input, desired]
 xor = dataset(data)
+xor.autoscale()
 
 def xor(which):
     if which == 0:
